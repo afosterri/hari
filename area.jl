@@ -187,6 +187,9 @@ function xwalkfind(Ax,Pmat);
 end
 
 
+
+
+
 function aggproc(Pmat2,input,delta,nmat,min,step,max,maxin,inpoly)
     #computes aggregate production using a matrix of girid points accounting for inputs on other gridpoints and inverse weighted by distance
     
@@ -375,13 +378,13 @@ function inputmax(z,z2,z3,z4,z5,B,N,idplot,area,alpha,flag,starting,maxin,distan
                 #println(z2wt)
                 #println(x1[n]," ",z2wt," ",wt)
                 
-                prplot=prplot+profit(x1[n],z2wt,wt)
+                prplot=prplot+profit(x1[n],z2wt,wt)/cellsperacre
             end
             prplotv[i]=prplot
             pr=pr+prplot
         end
         #println("tinput ",tinput," B ", B[k])
-        pr=-(pr-10000*((tinput-B[k])>0)*(tinput-B[k])^2)
+        pr=-(pr-1000000*((tinput-B[k])>0)*(tinput-B[k])^2)
         return pr
     end
     
@@ -393,11 +396,12 @@ function inputmax(z,z2,z3,z4,z5,B,N,idplot,area,alpha,flag,starting,maxin,distan
             println("1000")
             count=0
         end
-        prplot1=0
+        
         prplot=0
         #prplotv=Array{Float64}(undef,nplots)
         for k=1:K
             tinput=0
+            prplot1=0
             for n=1:N[k]
                 i=idplot[k,n]
                 for m=1:z4[i,maxin,1]
@@ -409,18 +413,18 @@ function inputmax(z,z2,z3,z4,z5,B,N,idplot,area,alpha,flag,starting,maxin,distan
                    
                     if k==kin
                      #println("x ",x,"i ",i,"kin ",kin)   
-                    prplot1=prplot1+profit(x[n],z2wt,wt)  
+                    prplot1=prplot1+profit(x[n],z2wt,wt)/cellsperacre 
                     tinput=tinput+x[n]/cellsperacre*exp(bdist*distance[i])
                     else  
                     #println("input ",input[i])
-                    prplot1=prplot1+profit(input[i],z2wt,wt)
-                    tinput=tinput+input[i]/cellsperacre*exp(bdist*distance[i])
+                    prplot1=prplot1+profit(input[i],z2wt,wt)/cellsperacre
+                    #tinput=tinput+input[i]/cellsperacre*exp(bdist*distance[i])
                     end  
                 end
                 #prplotv[i]=prplot1
                 prplot=prplot+prplot1
             end
-            prplot=prplot-10000*((tinput-B[k])>0)*(tinput-B[k])^2
+            prplot=prplot-1000000*((tinput-B[k])>0)*(tinput-B[k])^2
             #println("tinput ",tinput, " B ", B[k])
         end
         #println("pr profit ", prplot)
@@ -428,11 +432,6 @@ function inputmax(z,z2,z3,z4,z5,B,N,idplot,area,alpha,flag,starting,maxin,distan
         return prplot
     end
 
-    
-    
-    tarea=sum(area)
-    tz=sum(z5)
-    cellperaera=tz/tarea
     if flag==1
         input1=zeros(nplots)
         solvec=zeros(nplots)
@@ -482,7 +481,8 @@ function inputmax(z,z2,z3,z4,z5,B,N,idplot,area,alpha,flag,starting,maxin,distan
             for j=1:N[k]
                 id=idplot[k,j]
                 result[id]=res2[j]
-                prplotv[id]=res3
+                prplotv[id]=-res3
+                #println("profit ",res3)
             end
         end
 
@@ -525,11 +525,11 @@ function inputcomax(nplots,Btot,K,Pmat2,distmetric,nmat,min,step,max,maxin,inpol
                    
                     if k==kin
                      #println("x ",x,"i ",i,"kin ",kin)   
-                    prplot1=prplot1+profit(x[n],z2wt,wt)  
+                    prplot1=prplot1+profit(x[n],z2wt,wt)/cellsperacre  
                     tinput=tinput+x[n]/cellsperacre*exp(bdist*distance[i])
                     else  
                     #println("input ",input[i])
-                    prplot1=prplot1+profit(input[i],z2wt,wt)
+                    prplot1=prplot1+profit(input[i],z2wt,wt)/cellsperacre
                     tinput=tinput+input[i]/cellsperacre*exp(bdist*distance[i])
                     end  
                 end
@@ -587,7 +587,7 @@ function inputcomax(nplots,Btot,K,Pmat2,distmetric,nmat,min,step,max,maxin,inpol
     count=0
     x1=zeros(nplots)
     lambda1=ones(1)*4
-    res=optimize(z->gn(z,x1,Btot),lambda1,Optim.Options(iterations=10,g_abstol=.1))
+    res=optimize(z->gn(z,x1,Btot),lambda1,Optim.Options(iterations=30,g_abstol=.1))
     println(res)
     z=Optim.minimum(res)
     lambda1=Optim.minimizer(res)
@@ -595,6 +595,10 @@ function inputcomax(nplots,Btot,K,Pmat2,distmetric,nmat,min,step,max,maxin,inpol
     println("x1 ",x1)
     return lambda1,z,x1
 end
+
+
+
+
 
 function mnneighbors(input,area,nplots,K,N,idplot,nmat,B,prplotv,distance)
     function ln(x)
@@ -651,15 +655,15 @@ end
 
 function run()
     #loops through procedures
-    nfarmers=10
+    nfarmers=1
     min=1
     max::Int64=trunc(2*sqrt(nfarmers))
     #println(max)
-    step=.05 #.1 #distance between grid points4
-    plotdist=2:2 #1:3 #distriubtion of Plots
-    Bdist=2:2 #distribution of endowments
+    step=.1 #.1 #distance between grid points4
+    plotdist=4:4 #1:3 #distriubtion of Plots
+    Bdist=1:1 #distribution of endowments
     distmetric=1 #how fast to spillovers fall off
-    spill=0.1#-.1 #spillover coefficient
+    spill=0#-.1 #spillover coefficient
     maxin=1200  #max number of neighbors 
     bdist=0#.0001 #coefficient on cost of distance from plot 
     scorr=0  #spatial correlation of plot sizes
@@ -710,11 +714,12 @@ function run()
 
     #println(" iput ",input)  
     #println(input.*area)
-    bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5=mnneighbors(input,area,nplots,K,N,idplot,nmat,B,prplotv,distance)
+    bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5=0,0,0,0,0,0
+    #bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5=mnneighbors(input,area,nplots,K,N,idplot,nmat,B,prplotv,distance)
     del=0
     inputso=input[:]
     del=100
-    while del>.0001
+    while del>.000001
         println("coord sqdif ", del)
         #println("input ",input)
         gz,gz1,gz2,gz3,gz4,gz5,dsave=aggproc(Pmat2,inputso,distmetric,nmat,min,step,max,maxin,inpoly)
@@ -723,7 +728,7 @@ function run()
         svg3=gz3
         svg2=gz2
         svg=gz
-        ninputso,prplotvso=inputmax(gz,svg2,svg3,svg4,svg5,B,N,idplot,area,spill,0,inputso,maxin,distance,bdist,cellsperacre)
+        ninputso,prplotvso=inputmax(svg,svg2,svg3,svg4,svg5,B,N,idplot,area,spill,0,inputso,maxin,distance,bdist,cellsperacre)
       
         #println("in ",inputso, "nin ", ninputso)
         del=(inputso.-ninputso)'*(inputso.-ninputso)/nplots
