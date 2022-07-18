@@ -212,7 +212,7 @@ function inpoly(Pmat2)
         if inpoly==1 | inpoly==-1 
             inpoly2[m]=k
         end
-    end
+    end 
     plotid=[i for i=1:nplots]
     inpoly3=inpoly2.==plotid
     return inpoly3
