@@ -2,16 +2,6 @@ using Distributed
 @everywhere using Distributed,SharedArrays
 
 function run()
-min=1
-max=20
-step=.1
-delta=.5
-beta=1/2
-xgrid=[i for i=min:step:max]
-n=size(xgrid)[1]
-n2=n*n
-alpha=.5
-k=3
 
 function createdata(K,NN,BB,min,step,max) 
     #creates plots for K farmers, NN is distribution of number of plots, BB is range of input dist, min max is range of locations  
@@ -214,8 +204,16 @@ function inpoly(Pmat2)
         end
     end 
     plotid=[i for i=1:nplots]
-    inpoly3=inpoly2.==plotid
-    return inpoly3
+    for i=1:nplots
+        for k=1:K
+            for j=1:N[k]
+                plotfarmer[i,k]=idplot[k,n]==plotid[i]
+            end
+        end
+    end
+    inplot=inpoly2.==plotid
+    infarmer=inplot*plotfarmer
+    return inplot,infarmer
 end
 
 function weights()
@@ -239,6 +237,38 @@ function agprod(weights,inputs,add)
     return aginputs,plotout
 end
 
-function self(inputi,kin,)
-    for k=1:K
-        agprod(weights,inputs)
+K=3 #number farmers
+min=1
+max::Int64=trunc(2*sqrt(K))
+#println(max)
+step=.1 #.1 #distance between grid points4
+plotdist=4:4 #1:3 #distriubtion of Plots
+Bdist=1:1 #distribution of endowments
+distmetric=1 #how fast to spillovers fall off
+spill=0#-.1 #spillover coefficient
+maxin=1200  #max number of neighbors 
+bdist=0#.0001 #coefficient on cost of distance from plot 
+scorr=0  #spatial correlation of plot sizes
+cellsperacre=((max-min)/step+1)^2/(max-min)^2
+
+NN=2:2
+xgrid=[i for i=min:step:max]
+n=size(xgrid)[1]
+n2=n*n
+alpha=.5
+
+
+
+    #println("xxx" ,cellsperacre)
+    #first create plots 
+K,nplots,Ax,N,idplot,B,input=createdata(nfarmers,plotdist,Bdist,min,step,max)
+Ax2=spacecorr(Ax,scorr,min,step,max)
+Ax=Ax2
+Btot=sum(B)
+println("Btot ",Btot)
+distance=disttoplot(Ax)
+nmat=findneighbor(Ax)
+area,Pmat=comparea(Ax,min,max)
+xwalk,Pmat2=xwalkfind(Ax,Pmat)
+inplot,infarmer(Pmat2)
+end
