@@ -271,4 +271,4 @@ nmat=findneighbor(Ax)
 area,Pmat=comparea(Ax,min,max)
 xwalk,Pmat2=xwalkfind(Ax,Pmat)
 inplot,infarmer(Pmat2)
-end
+end   
