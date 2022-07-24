@@ -655,7 +655,7 @@ end
 
 function run()
     #loops through procedures
-    nfarmers=1
+    nfarmers=10
     min=1
     max::Int64=trunc(2*sqrt(nfarmers))
     #println(max)
