@@ -280,11 +280,10 @@ function run()
         plotout=f.(aginputs)'*add./cellsperacre
 
         inputs1=inputs.+dchange.*I(nplots)
-        
         p1,i1=agprod(inputs,add,add2)
         #println(size(inputs1)," ",size(add)," ",size(add2))
-        dagprod2=SharedArray{Float64}(nplots,nplots)
-        dinputs=SharedArray{Float64}(nplots,nplots)
+        #dagprod2=SharedArray{Float64}(nplots,nplots)
+        #dinputs=SharedArray{Float64}(nplots,nplots)
         #@time @sync @distributed for i=1:nplots 
         #p2,i2=agprod(inputs1[:,i],add,add2)
         #dagprod2[:,i]=(p2.-p1)./dchange
@@ -292,7 +291,7 @@ function run()
         #end
         
         p2,i2=agprod(inputs1,add,add2)
-        dagprod2==(p2.-p1)./dchange
+        dagprod2=(p2.-p1)./dchange
         dinputs=(i2.-i1)./dchange
         
         #println(size(dagprod))
@@ -344,7 +343,7 @@ function run()
         println("profits2 ", profitsv)
         return xinputs,-profitsv
     end
-
+#=
     function indmaxso(inputs)
 
         function profitsso(inputi,k,vec,inputs)
@@ -392,7 +391,53 @@ function run()
         #println("profits2 ", profitsv)
         return xinputs,-profitsv
     end
-#=
+=#
+function indmaxma(xinputs)
+        
+    function nlf!(Gfun,inplam)              
+        lambda=(inplam[nplots+1:nplots+nfarmers])
+        inputs=inplam[1:nplots]
+        plotout,tinputs=agprod(inputs,inplot,inplot)
+        #println(inputs," ",inplot)
+      
+        #println(inputs)
+        #println(lambda)
+
+        dplotout=dagprod(inputs,inplot,inplot)
+        area=sum(inplot,dims=1)/cellsperacre
+        #println(dplotout)
+        #println(size(dplotout))
+        #dplotout=sum(dplotout,dims=1)'  
+        println(size(plotfarmer),size(dplotout),size(plotfarmer))
+        dplotout=diag(plotfarmer*plotfarmer'*dplotout)         
+        tinputs=tinputs'.*exp.(gdist*distance)
+        #for i=1:nplots
+        #Gfun[i]=dplotout[i]-lambda*exp.(gdist*distance[i])*area[i]
+        #end
+        #println(size(dplotout),size(lambda),size(gdist),size(distance),size(area))
+        lamplot=plotfarmer*lambda
+        price=exp.(gdist*distance).*area'
+        Gfun[1:nplots]=dplotout-lamplot.*price
+        #println(size(tinputs),size(B),size(plotfarmer))
+        bc=B.-plotfarmer'*tinputs
+        #println(size(Gfun),size(tB),size(tinputs))
+        Gfun[nplots+1:nplots+nfarmers]=bc
+        #G1[:]=G
+       # println("F" ,G)
+       println(Gfun)
+       #println(typeof(Gfun))
+    end
+    
+    start3=ones(nplots+nfarmers)
+    z1=nlsolve(nlf!,start3,show_trace=false)
+    inall=ones(n2,1)
+    prof,inpt=agprod(z1.zero[1:nplots],inall,inall)
+    println(z1.zero)
+    return z1.zero,prof
+end
+
+    
+
     function indmaxso(xinputs)
         
         function nlf!(Gfun,inplam)              
@@ -417,7 +462,7 @@ function run()
             lamplot=plotfarmer*lambda
             price=exp.(gdist*distance).*area'
             Gfun[1:nplots]=dplotout-lamplot.*price
-            println(size(tinputs),size(B),size(plotfarmer))
+            #println(size(tinputs),size(B),size(plotfarmer))
             bc=B.-plotfarmer'*tinputs
             #println(size(Gfun),size(tB),size(tinputs))
             Gfun[nplots+1:nplots+nfarmers]=bc
@@ -435,7 +480,7 @@ function run()
         return z1.zero,prof
     end
 
-=#
+
     function indmaxco(xinputs)
         
         function nlf!(Gfun,inplam)              
@@ -540,7 +585,7 @@ function run()
 =#
  
 
-    nfarmers=2 #number farmers
+    nfarmers=10 #number farmers
     min=1
     max=trunc(2*sqrt(nfarmers))
     max=convert(Int64,max)
@@ -584,7 +629,7 @@ function run()
     #println("sum grid ",sum(inplot,dims=2))
     #println("inp",inplot)
     #println("inf",infarmer)
-    inputsmasv,profitsmasv=indmax(inputs)
+    inputsmasv,profitsmasv=indmaxma(inputs)
     #println(profitsv)
     println("now so")
     inputssosv,profitssosv=indmaxso(inputs)
