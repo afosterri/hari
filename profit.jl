@@ -408,7 +408,7 @@ function indmaxma(xinputs)
         #println(dplotout)
         #println(size(dplotout))
         #dplotout=sum(dplotout,dims=1)'  
-        println(size(plotfarmer),size(dplotout),size(plotfarmer))
+        #println(size(plotfarmer),size(dplotout),size(plotfarmer))
         dplotout=diag(plotfarmer*plotfarmer'*dplotout)         
         tinputs=tinputs'.*exp.(gdist*distance)
         #for i=1:nplots
@@ -424,7 +424,7 @@ function indmaxma(xinputs)
         Gfun[nplots+1:nplots+nfarmers]=bc
         #G1[:]=G
        # println("F" ,G)
-       println(Gfun)
+       #println(Gfun)
        #println(typeof(Gfun))
     end
     
@@ -585,17 +585,17 @@ end
 =#
  
 
-    nfarmers=10 #number farmers
+    nfarmers=5 #number farmers
     min=1
     max=trunc(2*sqrt(nfarmers))
     max=convert(Int64,max)
     
     #println(max)
     step=.1 #.1 #distance between grid points4
-    plotdist=4:4 #1:3 #distriubtion of Plots
-    Bdist=1:4 #distribution of endowments
-    delta=2 #how fast to spillovers fall off
-    spill=0#-.1 #spillover coefficient
+    plotdist=2:2 #1:3 #distriubtion of Plots
+    Bdist=4:4 #distribution of endowments
+    delta=1 #how fast to spillovers fall off
+    spill=-.5#-.1 #spillover coefficient
     maxin=1200  #max number of neighbors 
     gdist=0#.0001 #coefficient on cost of distance from plot 
     scorr=0  #spatial correlation of plot sizes
