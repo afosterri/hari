@@ -1,5 +1,5 @@
 using Distributed
-@everywhere using Delaunay, VoronoiCells, GeometryBasics, Random, PolygonOps, Plots, Optim
+@everywhere using Delaunay, VoronoiCells, GeometryBasics, Random, PolygonOps, Plots, Optim, Roots
 @everywhere using DataFrames, Econometrics, StatsBase, Distributed, SharedArrays, ForwardDiff,NLsolve,LinearAlgebra
 Random.seed!(1001)
 
@@ -9,6 +9,25 @@ function run()
         nplots=size(Ax)[1]
         distance=sqrt.(Ax[:,1].^2 .+ Ax[:,2].^2)
         return distance
+    end
+    function curvy(beta,delta,y1,Ax)
+        function f1(_Z)
+           
+            out=(-beta*delta*y1*z - beta*y1*z + _Z*delta + cos(beta*y1)*z - cos(_Z) + _Z - z + 1)
+            #println(out)
+            return out
+        end
+        z1=zeros(nplots,2)
+        z=0
+    for i=1:nplots
+    z=Ax[i,1]
+    
+    z1[i,1]=find_zero(f1,y1/2)/beta
+    z=Ax[i,2]
+    z1[i,2]=find_zero(f1,y1/2)/beta
+    #println(z1[i,:])
+    end
+    return z1 
     end
 
     function createdata(K,NN,BB,min,step,max) 
@@ -30,11 +49,12 @@ function run()
         idplot
         nplots=sum(N)
         B=rand(BB,K)*K/nplots
-        B[1]=2
-        B[2]=2
+        #B[1]=2
+        #B[2]=2
         #B[2]=4
-        Ax=rand(nplots,2)*(max-min) .+ min
-        Ax=[1 1 ; 1 1.25; 2 1.75 ; 2 2 ]
+        Ax1=rand(nplots,2)
+        Ax=curvy(1.5,.1,max-min,Ax1).+min
+        #Ax=[1 1 ; 1 1.25; 2 1.75 ; 2 2 ]
         inputs=rand(nplots)
         return K,nplots,Ax,N,idplot,B,inputs
     end
@@ -56,72 +76,53 @@ function run()
         out=a[d,:];
         out=vcat(out,transpose(out[1,:]))
     end
-    function spacecorr(Ax,sc,min,step,max)
+    function spacecorr(A1x,sc,min,step,max)
         #perturbs locations so plots are more or less close depending on sc
-        ngrid::Int16=(max-min)/step+1
-        nplots=size(Ax)[1]
-        Bx=zeros(nplots,2)
-        ht=zeros(ngrid,ngrid,nplots)
-        imin=Array{Int16}(undef,nplots)
-        jmin=Array{Int16}(undef,nplots)
-        for n=1:nplots
-            #find closest grid point
-            dmin=1000
-            i=0
-            for x=min:step:max
-                i=i+1
-                j=0
-                for y=min:step:max
-                    j=j+1
-                    
-                    d=sqrt((Ax[n,1]-x)^2+(Ax[n,2]-y)^2)
-                    ht[i,j,n]=d
-                    if d<dmin 
-                        dmin=d
-                        imin[n]=i
-                        jmin[n]=j
-                    end
+        Ax=A1x[:,:]            
+        Bx=A1x[:,:]
+        
+        for i=1:5
+        
+        #println("min ",min," ", max)
+        
+        wt=exp.(-((Ax[:,1].-Ax[:,1]').^2+(Ax[:,2].-Ax[:,2]').^2).^(1/2))
+                dx=wt*Ax[:,1]./sum(wt,dims=2)-Ax[:,1]
+        dy=wt*Ax[:,2]./sum(wt,dims=2)-Ax[:,2]
+        
+            for n=1:nplots
+                if mod(n,2)==0
+                Bx[n,1]=Ax[n,1]-dx[n]*sc
+                Bx[n,2]=Ax[n,2]-dy[n]*sc
+                else
+                Bx[n,1]=Ax[n,1]+dx[n]*sc
+                Bx[n,2]=Ax[n,2]+dy[n]*sc
                 end
-            end
-        end
-        #total distance of all plots to a given grid point
-        ht2=sum(ht[:,:,i] for i=1:nplots)
-        for n=1:nplots
-            dx=0
-            dy=0
-            iv=imin[n]
-            jv=jmin[n]
-            try
-            dx=ht2[iv+1,jv]-ht2[iv,jv]
-            dy=ht2[iv,jv+1]-ht2[jv,jv]
-            catch
-                dx=0
-                dy=0
-            end    
-            #println("dx ",dx," ",dy)
-            #perturb location towards grid points that are farther from other points if sc>0
-
-            Bx[n,1]=Ax[n,1]+dx*sc
-            Bx[n,2]=Ax[n,2]+dy*sc
-            #println("BB1 ",Bx[n,1])
-            #println("BB2 ",Bx[n,2])
-            #don't move outside boundaries
-            if Bx[n,1]<min 
-                Bx[n,1]=Ax[n,1]
-            end
-            if Bx[n,1]>max 
-                Bx[n,1]=Ax[n,1]
-            end
-            if Bx[n,2]<min 
-                Bx[n,2]=Ax[n,2]
-            end
-            if Bx[n,2]>max 
-                Bx[n,2]=Ax[n,2]
-            end
-            #println("NBB1 ",Bx[n,1])
-            #println("NBB2 ",Bx[n,2])
+                #println(Bx[n,1]," ",Ax[n,1])
+                #println("BB1 ",Bx[n,1])
+                #println("BB2 ",Bx[n,2])
+                #don't move outside boundaries
+                
+                if Bx[n,1]<min 
+                    Bx[n,1]=Ax[n,1]
+                end
+                if Bx[n,1]>max 
+                    Bx[n,1]=Ax[n,1]
+                end
+                if Bx[n,2]<min 
+                    Bx[n,2]=Ax[n,2]
+                end
+                if Bx[n,2]>max 
+                    Bx[n,2]=Ax[n,2]
+                end
             
+                #println("NBB1 ",Bx[n,1])
+                #println("NBB2 ",Bx[n,2])
+                
+            end
+        Ax=Bx[:,:]
+        #println("BX ",Bx)
         end
+        
         return(Bx)
     end
     function comparea(Ax,min,max)
@@ -136,11 +137,9 @@ function run()
         xsquare=Rectangle(Point2(min,min), Point2(max,max))
         
         tess=voronoicells(points,xsquare)
-        scatter(points, markersize = 6, label = "generators")
-        annotate!([(points[n][1] + 0.02, points[n][2] + 0.03, Plots.text(n)) for n in 1:nr])
-        zp=plot!(tess, legend = :topleft)
-        display(zp)
+        
         area=zeros(nr)
+        center=zeros(nr,2)
         Pmat=Vector{Vector{Point2{Float64}}}(undef,nr)
         for i=1:nr
             local P=tess.Cells[i]
@@ -151,8 +150,28 @@ function run()
                 area[i]=area[i]+P[j][1]*P[j+1][2]-P[j][2]*P[j+1][1]
             end
             area[i]=abs(area[i])/2
+            ta=zeros(2)
+            twt=0
+            for j=2:(size(P)[1]-1)
+                ce=1/3*(P[j]+P[j+1]+P[1])
+                a=[(P[j]-P[1])';(P[j+1]-P[1])']
+                wt=a[1,1]*a[2,2]-a[1,2]*a[2,1]
+                ta=ta+wt*ce
+                twt=twt+wt
+            end
+            center[i,:]=ta/twt
+
+
+
+            
         end
-        return area, Pmat
+
+        points=[Point2(center[i,1],center[i,2]) for i in 1:nr]
+        scatter(points, markersize = 6, label = "generators")
+        annotate!([(points[n][1] + 0.02, points[n][2] + 0.03, Plots.text(n)) for n in 1:nr])
+        zp=plot!(tess, legend = :topleft)
+        display(zp)
+        return area, Pmat,center
     end
     function xwalkfind(Ax,Pmat);
         #creates crosswalk of neighboring plots
@@ -182,25 +201,27 @@ function run()
         end
         return xwalk,Pmat2
     end
+    
     function dist(x,y,delta)
         
         
-        z=1/(1+exp(((x[1]-y[1])^2+(x[2]-y[2])^2)/delta))
-        #=
-        z=0
-        if (sqrt((x[1]-y[1])^2+(x[2]-y[2])^2)<1) 
-            z=1
-        end
-        =#
+        z=1/(1+exp((((x[1]-y[1])^2+(x[2]-y[2])^2)^(1/2)/delta)-1))
+        
+        #z=0
+        #if (sqrt((x[1]-y[1])^2+(x[2]-y[2])^2)<1) 
+        #    z=1
+        #end
         return z
     end
     function f(x)
         if x>=0 
-            z=x^beta
+            z=1000*x^beta
         else
             z=-1000*x^2
         end
+        #println(x)
         #z=(real((x.>=0).*(complex.(x)).^beta)).+((x.<0).*(-10000))
+        #println(z)
         #if sum(x.<0)>0 
         #println("prod",x," ",(z))
         #end
@@ -210,21 +231,16 @@ function run()
         
         inpoly2=zeros(n2)
         plotfarmer=[false for i=1:nplots , j=1:nfarmers]
-
+      
         m=0
-        for x=min:step:max
-            for y=min:step:max
-                m=m+1
-                for k=1:nplots
-                    inpoly=PolygonOps.inpolygon([x,y],Pmat2[k])                    
-                    if abs(inpoly)==1 
-                        inpoly2[m]=k
-                    end
+        for m=1:nplots
+            for k=1:nplots
+                inpoly=PolygonOps.inpolygon(Ax[m,1:2],Pmat2[k])                    
+                if abs(inpoly)==1 
+                    inpoly2[m]=k
                 end
-
-            end
+            end         
         end
-
         plotid=[i for i=1:nplots]
         for i=1:nplots
             for k=1:K
@@ -239,20 +255,25 @@ function run()
         infarmer=inplot*plotfarmer
         return inplot,infarmer,plotfarmer
     end
-    function weights()
-        grid=[[xgrid[i] xgrid[j]] for i=1:n for  j=1:n]
-        
+    function weights(centers)
+        #grid=[[xgrid[i] xgrid[j]] for i=1:n for  j=1:n]
+        grid=[centers[i,:] for i=1:nplots]
+        n2=nplots
         #@time distgrid=reshape([dist(grid[i],grid[j],delta) for i=1:n2 for j=1:n2],n2,n2)
         #@time distgrid=[dist(grid[i],grid[j],delta) for i=1:n2,  j=1:n2]
         distgrid=SharedArray{Float64}(n2,n2)
-        @sync @distributed for i=1:n2
+        #println(centers)
+        for i=1:n2
             for j=1:n2
-                distgrid[i,j]=dist(grid[i],grid[j],delta)
+
+                distgrid[i,j]=dist(grid[i],grid[j],delta)*area[j]
             end
         end
         #den=maximum(sum(distgrid,dims=2))
-        den=1
+        den=(sum(distgrid,dims=2))        
         weights=distgrid./den
+        println("neigh eff 1",diag(weights*nmat')./diag(weights))
+        println("neigh eff 2",(sum(weights,dims=2)-diag(weights))./diag(weights))
         return weights
     end
     function agprod(inputs,add,add2)
@@ -261,14 +282,20 @@ function run()
         #println(add)
         #println(add2)
         #println(weights)
-        inputsgrid=inplot*inputs
+        
+        inputsgrid=inputs[:,:]
         aginputs=(inputsgrid.+spill.*(weights*inputsgrid))
         #icost=exp.(disttogrid.*gdist)
         #println(icost," icos")
         #println(inputsgrid)
-        #println(size(inputsgrid),size(add2),size(cellsperacre))
-        tinputs=inputsgrid'*add2./cellsperacre
-        plotout=f.(aginputs)'*add./cellsperacre
+        #println(size(aginputs),size(f.(aginputs)),size(inputs),size(add2),size(add),size(area))
+        tinputs=(inputsgrid.*area)'*add2
+        #println(typeof(aginputs))
+        plotout=(f.(aginputs).*area)'  
+        #add=convert(Array{Float64},add)
+        plotout=convert(Array{Float64},plotout)
+        plotout=plotout*add
+        #println("plotout ",plotout)
         return plotout,tinputs
     end
 
@@ -290,6 +317,7 @@ function run()
         dchange=.0000001
         eye=I(nplots)
         eye=eye[:,add3]
+        #println("add3 ",add3)
         inputs1=inputs.+dchange.*eye
         
         global dinpu1=(inputs)
@@ -459,35 +487,22 @@ function run()
 
 function indmaxma1(inputs)
             
-    function nlf!(Gfun,inplam)              
+    function nlf!(Gfun,inplam)
+        #println("inplam ",inplam)              
         lambda=(inplam[xnk+1])
         xinputs3=xinputs2[:]
         xinputs3[xstart:xend]=inplam[1:xnk]
-        #plotout,tinputs=agprod(xinputs,inplot,inplot)
         dplotout=dagprod(xinputs3,inplot,inplot,xstart:xend)
-        #dplotout=diag(plotfarmer*plotfarmer'*dplotout) 
-        #println(size(dplotout),size(plotfarmer))
         dplotout=plotfarmer'*dplotout
-        #println(dplotout)
-        #println(xk)
         dp1=dplotout[xk,:]
-        #println("dp1 ",dp1)
-        #dp1=diag(dp1)
-
-        price=exp.(gdist*distance).*area'
+        price=exp.(gdist*distance).*area
         pr1=price[xstart:xend]
-        tinputs=sum(pr1.*inplam[1:xnk])
+        tinputs=sum(pr1.*xinputs3[xstart:xend])
+        #println(size(price),size(pr1),size(tinputs),size(lambda),size(dp1))
         deriv=dp1-lambda.*pr1 #-1000*(inplam[1:xnk].<0).*inplam[1:xnk]
         Gfun[1:xnk]=deriv
-        #println(size(tinputs),size(B),size(plotfarmer))
         bc=B[xk]-tinputs[1]
-        #println(size(Gfun),size(tB),size(tinputs))
-        Gfun[xnk+1]=bc
-        #println(Gfun)
-        #G1[:]=G
-    # println("F" ,G)
-    #println(Gfun)
-    #println(typeof(Gfun))
+        Gfun[xnk+1]=bc        
     end
     
     xinputs1=SharedArray{Float64}(nplots)
@@ -502,7 +517,7 @@ function indmaxma1(inputs)
     lamvec1=ones(K)
     lamvec2=lamvec1[:]
     while del>.0000001
-        @sync @distributed for k=1:K            
+        @sync @distributed for k=1:K             
         #for k=1:K            
             xstart=idplot[k,1]
             xend=xstart+N[k]-1
@@ -513,7 +528,7 @@ function indmaxma1(inputs)
             start3[xnk+1]=lamvec1[xk]
             
             z1=nlsolve(nlf!,start3,show_trace=false,ftol=1e-8)
-            println("z1 ",z1.zero)
+            
             xinputs1[xstart:xend]=z1.zero[1:xnk]
             
             
@@ -522,33 +537,43 @@ function indmaxma1(inputs)
         lamvec1=lamvec2[:]
         xinputs2=xinputs1[:]
         del1=xinputs-xinputs1
-        println("del1 ",del1)
+        #println("del1 ",del1)
         xinputs=.5*xinputs+.5*xinputs1
         xinputs1=xinputs[:]
         del=del1'del1/nplots  
         println("del ",del)
     end     
-    println(xinputs')  
+    #println(xinputs')  
     prof,inpt=agprod(xinputs,inplot,inplot)
     return xinputs,prof
 end
 
-function indmaxso1(inputs)
+function indmaxso1(inputs,mu)
             
     function nlf!(Gfun,inplam)              
+        #println("inplam ",inplam)
         lambda=(inplam[xnk+1])
         
         xinputs3=xinputs2[:]
         xinputs3[xstart:xend]=inplam[1:xnk]
         #plotout,tinputs=agprod(xinputs,inplot,inplot)
-        dplotout=dagprod(xinputs,inplot,inplot,xstart:xend)
+        dplotout=dagprod(xinputs3,inplot,inplot,xstart:xend)
+        #println("dp ",size(dplotout))
         #dplotout=diag(plotfarmer*plotfarmer'*dplotout) 
-        dplotout=sum(dplotout,dims=1)'
+        #dplotout=plotfarmer'*dplotout
+        #dp1=dplotout[xk,:]
+        #println(dplotout)
+        wtfarmer=(1-mu)*infarmer+mu*ones(nplots,nfarmers)
+        #println(wtfarmer)
+        dplotout=dplotout'*wtfarmer
+        dp1=dplotout[:,xk]
+        #println(dp1)
+        #println(dplotout)
         #println(size(dplotout))
-        dp1=dplotout
-        price=exp.(gdist*distance).*area'
+        #dp1=dplotout
+        price=exp.(gdist*distance).*area
         pr1=price[xstart:xend]
-        tinputs=sum(pr1.*inplam[1:xnk])
+        tinputs=sum(pr1.*xinputs3[xstart:xend])
         #println(size(price),size(pr1),size(tinputs),size(lambda),size(dp1))
         deriv=dp1-lambda.*pr1 #-1000*(inplam[1:xnk].<0).*inplam[1:xnk]
         Gfun[1:xnk]=deriv
@@ -586,18 +611,18 @@ function indmaxso1(inputs)
             start3[xnk+1]=lamvec1[xk]
             z1=nlsolve(nlf!,start3,show_trace=false,ftol=1e-8)
             
-            println("z1 ",z1.zero)
+            #println("z1 ",z1.zero)
             xinputs1[xstart:xend]=z1.zero[1:xnk]
             lamvec2[xk]=z1.zero[xnk+1]
         end
         lamvec1=lamvec2[:]
-        xinputs2=xinputs[:]
-        del1=xinputs-xinputs1
-        xinputs=.8*xinputs+.2*xinputs1
+        xinputs2=xinputs1[:]
+        del1=xinputs2-xinputs
+        xinputs=.8*xinputs2+.2*xinputs1
         del=del1'del1/nplots  
         println("del ",del)
     end
-    println(xinputs')     
+    #println(xinputs')     
     prof,inpt=agprod(xinputs,inplot,inplot)
     return xinputs,prof
 end
@@ -632,7 +657,7 @@ end
             #end
             #println(size(dplotout),size(lambda),size(gdist),size(distance),size(area))
             lamplot=plotfarmer*lambda
-            price=exp.(gdist*distance).*area'
+            price=exp.(gdist*distance).*area
             Gfun[1:nplots]=dplotout-lamplot.*price
             #println(size(tinputs),size(B),size(plotfarmer))
             bc=B.-plotfarmer'*tinputs
@@ -688,6 +713,7 @@ end
             bc=B.-plotfarmer'*tinputs
             #println(size(Gfun),size(tB),size(tinputs))
             Gfun[nplots+1:nplots+nfarmers]=bc
+            println(Gfun)
             #G1[:]=G
            # println("F" ,G)
            # println(Gfun)
@@ -707,7 +733,8 @@ end
 
     function indmaxco(xinputs)
         
-        function nlf!(Gfun,inplam)              
+        function nlf!(Gfun,inplam)     
+            #println("inplam ",inplam)         
             lambda=(inplam[nplots+1])
             inputs=inplam[1:nplots]
             plotout,tinputs=agprod(inputs,inplot,inplot)
@@ -726,7 +753,7 @@ end
             #Gfun[i]=dplotout[i]-lambda*exp.(gdist*distance[i])*area[i]
             #end
             #println(size(dplotout),size(lambda),size(gdist),size(distance),size(area))
-            Gfun[1:nplots]=dplotout-lambda*exp.(gdist*distance).*area'
+            Gfun[1:nplots]=dplotout-lambda*exp.(gdist*distance).*area
             
             bc=tB-tinputs[1]
             #println(size(Gfun),size(tB),size(tinputs))
@@ -741,7 +768,7 @@ end
         z1=nlsolve(nlf!,start3,show_trace=false,ftol=.001)
         inall=ones(n2,1)
         prof,inpt=agprod(z1.zero[1:nplots],inplot,inplot)
-        println(z1.zero)
+        #println(z1.zero)
         return z1.zero,prof
     end
 
@@ -752,10 +779,12 @@ function mnneighbors(input,prplotv)
     end
     #caluclates input of neighbors and runs regressions
     #println(size(input),size(nmat))
-    sparseinput=nmat.*ln.(input)'
-    sparsedist=nmat.*ln.(distance)'
-    mninput=[sum(sparseinput[i,j] for j=1:nplots)/sum(nmat[i,j] for j=1:nplots) for i=1:nplots]
-    mndist=[sum(sparsedist[i,j] for j=1:nplots)/sum(nmat[i,j] for j=1:nplots) for i=1:nplots]
+    #mninput=log.(weights*input-Diagonal(diag(weights))*input)
+    #mndist=log.(weights*distance-Diagonal(diag(weights))*distance)
+    sparseinput=nmat.*(input)'
+    sparsedist=nmat.*(distance)'
+    mninput=ln.([sum(sparseinput[i,j] for j=1:nplots)/sum(nmat[i,j] for j=1:nplots) for i=1:nplots])
+    mndist=ln.([sum(sparsedist[i,j] for j=1:nplots)/sum(nmat[i,j] for j=1:nplots) for i=1:nplots])
     tarea=zeros(K)
     herf=zeros(K)
     for k=1:K
@@ -789,12 +818,16 @@ function mnneighbors(input,prplotv)
     global data=DataFrame(input=input,area=areavec,mninput=mninput,mnareaf=mnareaf,mnareap=mnareap,plotB=plotB,plottarea=plottarea,owner=owner,prplotv=prplotvec,distance=distance,mndist=mndist,plotherf=plotherf,mnherf=mnherf)
     mnarea=sum(Matrix(data[:,["area", "mnareap","input","prplotv"]]))/nplots
     areacov=cov(Matrix(data[:,["area", "mnareap","input","prplotv"]]))
+    bhat0a=fit(EconometricModel, @formula(input~area+mnareap+absorb(owner)),data)
+    bhat0=fit(EconometricModel, @formula(input~area+distance+mnareap+mnareaf+mndist+mnherf+absorb(owner)),data)
     bhat1=fit(EconometricModel, @formula(mninput~mnareaf+mnareap+area+distance+mndist+mnherf+absorb(owner)),data)
     bhat1a=fit(EconometricModel, @formula(mninput~mnareaf+mnareap+area+plottarea +distance+mndist+plotherf+mnherf ),data)
     bhat2=fit(EconometricModel, @formula(input ~ area +distance+ absorb(owner)+ (mninput~mnareaf+mnareap+mndist + mnherf)),data)
     bhat3=fit(EconometricModel, @formula(prplotv ~ area + distance+ absorb(owner)+ (mninput~mnareaf+mnareap+mndist + mnherf)),data)
     bhat4=fit(EconometricModel, @formula(input ~ area +plottarea+ distance +plotherf+(mninput~mnareaf+mnareap+mndist+mnherf)),data)
     bhat5=fit(EconometricModel, @formula(prplotv ~ area +plottarea+distance+plotherf+ (mninput~mnareaf+mnareap+mndist+mnherf)),data)
+    print(bhat0a)
+    print(bhat0)
     println(bhat1)
     println(bhat1a)
     println(bhat2)
@@ -807,61 +840,70 @@ end
 
  
 
-    nfarmers=2#number farmers
+    nfarmers=5#number farmers
     min=1
     max=trunc(2*sqrt(nfarmers))
     max=convert(Int64,max)
     
     #println(max)
     step=.1 #.1 #distance between grid points4
-    plotdist=2:2 #1:3 #distriubtion of Plots
+    plotdist=1:3 #1:3 #distriubtion of Plots
     Bdist=3:3 #distribution of endowments
-    delta=.5 #how fast to spillovers fall off
-    spill=-.01#-.1 #spillover coefficient
+    delta=1 #how fast to spillovers fall off
+    spill=-.2#-.1 #spillover coefficient
     maxin=1200  #max number of neighbors 
-    gdist=0#.0001 #coefficient on cost of distance from plot 
-    scorr=0  #spatial correlation of plot sizes
+    gdist=.01#.0001 #coefficient on cost of distance from plot 
+    scorr=-.5  #spatial correlation of plot sizes
     cellsperacre=((max-min)/step+1)^2/(max-min)^2
       
     NN=2:2
     xgrid=[i for i=min:step:max]
-    n=size(xgrid)[1]
-    n2=n*n
+   
+    #n=size(xgrid)[1]
+    #n2=n*n
     beta=1/2
     K,nplots,Ax,N,idplot,B,inputs=createdata(nfarmers,plotdist,Bdist,min,step,max)
-    
+    n=nplots
+    n2=nplots
     tB=sum(B) 
-    Ax2=spacecorr(Ax,scorr,min,step,max)
-    Ax=Ax2
+    Ax2=Ax[:,:]
+    #Ax2=spacecorr(Ax,scorr,min,step,max)
+    println("Ax ",Ax)
+    println("Ax2 ",Ax2)
+    Ax=Ax2[:,:]
     Btot=sum(B)
     println("Btot ",Btot)
     distance=disttoplot(Ax)
-    
+    global distsv=distance
+    global Axsv=Ax
     nmat=findneighbor(Ax)
-    area2,Pmat=comparea(Ax,min,max)
+    global nmatsv=nmat
+    area,Pmat,centers=comparea(Ax,min,max)
+    Ax=centers[:,:]
     xwalk,Pmat2=xwalkfind(Ax,Pmat)
+    #println(Pmat2)
     inplot,infarmer,plotfarmer=inpoly(Pmat2)
+    global areasv=area
     global inplot1=inplot
     global infarm1=infarmer
     global polotfarm1=plotfarmer
     disttogrid=inplot*distance
-    weights=weights()
-    area=sum(inplot,dims=1)/cellsperacre
-    println("area ",area2, " ",area)
-
+    #println(centers)
+    weights=weights(centers)
+    global weightsv=weights
     #println(weights)
     #println(n)
     #println("sum grid ",sum(inplot,dims=2))
     #println("inp",inplot)
     #println("inf",infarmer)
-    @time inputsmasv,profitsmasv=indmaxma1(inputs)
+    @time inputsmasv,profitsmasv=indmaxso1(inputs,0)
     #time inputsmasv,profitsmasv=indmaxma(inputs)
     bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,mnarea,areacov=0,0,0,0,0,0,0,0
     #bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,mnarea,areacov=mnneighbors(inputsmasv[1:nplots],profitsmasv)
     
     #println(profitsv)
     println("now so")
-    @time inputssosv,profitssosv=indmaxso1(inputs)
+    @time inputssosv,profitssosv=indmaxso1(inputs,1)
     #time inputssosv,profitssosv=indmaxso(inputs)
     #println(profitsosv)
     #println(infarmer)
