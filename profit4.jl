@@ -299,38 +299,47 @@ function run()
         return weights
     end
    
-    function agprod(inputs,add,add2)
+    function agprod(inputs,transfer)
         inputsgrid=inputs[:,:]
         aginputs=(inputsgrid.+spill.*(weights*inputsgrid))          
         plotout=(f.(aginputs).*area)'
-        plotout=convert(Array{Float64},plotout)
-        plotout=plotout*add
-        price=exp.(gdist*distance).*area
-        
-        bc=((price.*inputs)'*infarmer)'   
-        
-        bc=B.-bc
+        plotout=convert(Array{Float64},plotout)        
+        price=exp.(gdist*distance).*area        
+        bc=((price.*inputs)'*infarmer)'           
+        bc=B.+transfer.-bc
         #println("bc ", bc)
         util=g.(bc)'
         return plotout,util
     end
+    
 
-   
-    function dagprod(inputs,add,add2,add3)
+    function dagprod(inputs,add3,transferin)
         #println("hello2")
         dchange=.0000001
+        transfer=transferin[:]
         eye=I(nplots)
         eye=eye[:,add3]
         #println("add3 ",add3)
-        inputs1=inputs.+dchange.*eye    
-                 
-        p1,cost1=agprod(inputs,add,add2)
-        
-        p2,cost2=agprod(inputs1,add,add2)          
+        inputs1=inputs.+dchange.*eye                     
+        p1,cost1=agprod(inputs,transfer)
+        p2,cost2=agprod(inputs1,transfer)          
         dagprod2=(p2.-p1)./dchange        
-        dcost=(cost2.-cost1)./dchange
-        
+        dcost=(cost2.-cost1)./dchange        
         return dagprod2,dcost
+    end
+
+    function dagprod(inputs,transferin)
+        #println("hello2")
+        dchange=.0000001
+        transfer=transferin[:]
+        eye=I(nfarmers)        
+        #println("add3 ",add3)
+        transfer1=transfer.+dchange.*eye                     
+        p1,cost1=agprod(inputs,transfer)        
+        p2,cost2=agprod(inputs,transfer1)          
+        #dagprod2=(p2.-p1)./dchange        
+        dcost=(cost2.-cost1)./dchange        
+        return dcost
     end
 
 
@@ -341,15 +350,15 @@ function run()
             #c=inplam[xnk+1]                    
             xinputs3=xinputs2[:]
             xinputs3[xstart:xend]=inplam[1:xnk]        
-            dplotout,dcost=dagprod(xinputs3,inplot,infarmer,xstart:xend)   
-            println("xstart ",xstart)
-            println("dcost ",dcost)
+            transfersin=zeros(nfarmers)            
+            dplotout,dcost=dagprod(xinputs3,xstart:xend,transfersin)   
+            #println("xstart ",xstart)
+            #println("dcost ",dcost)
             wtfarmer=(1-mu)*infarmer+mu*ones(nplots,nfarmers)            
             dplotout=dplotout*wtfarmer
             #println(wtfarmercost)
             dp1=dplotout[:,xk]        
-            pr1=dcost[:,xk]  
-         
+            pr1=dcost[:,xk]           
             deriv=dp1 .+pr1   #-1000*(inplam[1:xnk].<0).*inplam[1:xnk]
             Gfun[1:xnk]=deriv
         end
@@ -365,7 +374,7 @@ function run()
         del=100
         #lamvec1=ones(K)
         #lamvec2=lamvec1[:]
-        while del>.0000001
+        while del>.00001
         # @sync @distributed for k=1:K            
             for k=1:K     
                 xstart=idplot[k,1]
@@ -374,12 +383,12 @@ function run()
                 xnk=N[k]
                 start3=xinputs[xstart:xend]            
                 z1=nlsolve(nlf!,start3,show_trace=false,ftol=1e-8)     
-                xinputs1[xstart:xend]=z1.zero[1:xnk]            
+                xinputs1[xstart:xend]=z1.zero            
             end
             #lamvec1=lamvec2[:]        
             xinputs2=xinputs1[:]
             del1=xinputs2-xinputs
-            xinputs=.8*xinputs2+.2*xinputs1
+            xinputs=.8*xinputs2+.2*xinputs
             del=del1'del1/nplots  
             println("del ",del)
         end
@@ -387,13 +396,96 @@ function run()
         #println(xinputs')   
         price=exp.(gdist*distance).*area
         
-    
-        prof,ut1=agprod(xinputs,infarmer,infarmer)
+        transfers=zeros(nfarmers)
+        prof,ut1=agprod(xinputs,transfers)
+        prof=(prof*infarmer)
         util=prof+ut1
         return xinputs,prof,util
     end
 
-   
+    function indmaxco1(inputs,mu)
+                
+        function nlf!(Gfun,inplam)  
+            #lambda=inplam[xnk+2]
+            #c=inplam[xnk+1]                    
+            xinputs3=xinputs2[:]
+            xinputs3[xstart:xend]=inplam[1:xnk]
+            transfersin=xtransferlam[1:nfarmers]                    
+            dplotout,dcost=dagprod(xinputs3,xstart:xend,transfersin)   
+            
+            wtfarmer=(1-mu)*infarmer+mu*ones(nplots,nfarmers)            
+            dplotout=dplotout*wtfarmer
+            #println(wtfarmercost)
+            dp1=dplotout[:,xk]        
+            pr1=dcost[:,xk]   
+            println("dplotout ",dp1)        
+            println("dcost ",dcost)        
+            deriv=dp1 .+pr1   #-1000*(inplam[1:xnk].<0).*inplam[1:xnk]
+            Gfun[1:xnk]=deriv
+        end
+        
+        function nlf2!(Gfun,inplam)  
+            #lambda=inplam[xnk+2]
+            #c=inplam[xnk+1]                                
+            transferlam=inplam
+            transfers=transferlam[1:nfarmers]
+            deriv=inplam[:]
+            dcost=dagprod(xinputs2,transfers) 
+            lambda=transferlam[nfarmers+1]                          
+          
+            deriv[1:nfarmers]=diag(dcost).-lambda
+            deriv[nfarmers+1]=sum(transfers)
+            #println("deriv ",deriv)            
+            Gfun[1:nfarmers+1]=deriv
+        end
+
+
+        xinputs1=SharedArray{Float64}(nplots)
+        xinputs=inputs[:]
+        xinputs2=xinputs[:]
+        xinputs1[:]=xinputs
+        xtransferlam=zeros(nfarmers+1)
+        #xtransferlam[nfarmers+1]=1
+        xstart=0
+        xend=0
+        xk=0
+        xnk=0
+        del=100
+        #lamvec1=ones(K)
+        #lamvec2=lamvec1[:]
+        while del>.00001
+        # @sync @distributed for k=1:K            
+            for k=1:K     
+                xstart=idplot[k,1]
+                xend=xstart+N[k]-1
+                xk=k
+                xnk=N[k]
+                start3=xinputs[xstart:xend]            
+                z1=nlsolve(nlf!,start3,show_trace=false,ftol=1e-8)     
+                xinputs1[xstart:xend]=z1.zero 
+                println("xinputs1 ",xinputs1)           
+            end
+            z2=nlsolve(nlf2!,xtransferlam,show_trace=false,ftol=1e-8)
+            xtransferlam2=z2.zero
+            println("xtransfer ",xtransferlam2)
+            xtransferlam=.8*xtransferlam2+.2*xtransferlam
+            #lamvec1=lamvec2[:]        
+            xinputs2=xinputs1[:]
+            del1=xinputs2-xinputs
+            xinputs=.8*xinputs2+.2*xinputs
+            del=del1'del1/nplots  
+            println("del ",del)
+        end
+        inpt=0
+        println("B ",B')
+        println("xtransferlam ",xtransferlam')
+        println("xinputs ",xinputs')   
+        price=exp.(gdist*distance).*area        
+        prof,ut1=agprod(xinputs,xtransferlam[1:nfarmers])
+        prof=(prof*infarmer)
+        util=prof+ut1        
+        return xinputs,prof,util
+    end
     function indmaxco(xinputs)
         
         function nlf!(Gfun,inplam)     
@@ -513,7 +605,7 @@ function run()
     plotdist=2:2 #1:3 #distriubtion of Plots
     Bdist=30:30 #distribution of endowments
     delta=1 #how fast to spillovers fall off
-    spill=-.2#-.1 #spillover coefficient
+    spill=0#-.1 #spillover coefficient
     maxin=1200  #max number of neighbors 
     gdist=0#.0001 #coefficient on cost of distance from plot 
     scorr=-.5  #spatial correlation of plot sizes
@@ -572,7 +664,7 @@ function run()
     #println(infarmer)
     #println(B)
     #inputscosv,profitscosv=indmaxco(inputs)
-    @time inputscosv,profitscosv,utilcosv=indmaxso1(inputs,1)
+    @time inputscosv,profitscosv,utilcosv=indmaxco1(inputs,1)
     #inputscosv=zeros(nplots)
     #profitscosv=zeros(nplots)
     global wtsv=weights*inplot
