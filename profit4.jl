@@ -34,7 +34,7 @@ function run()
         #creates plots for K farmers, NN is distribution of number of plots, BB is range of input dist, min max is range of locations  
         N=rand(NN,K)
         #println("N ",N)
-        N=[2,2,2,2,1]    
+        #N=[2,2,2,2,1]    
         idplot=zeros(Int16,K,20)
 
         i=0
@@ -49,11 +49,14 @@ function run()
         idplot
         nplots=sum(N)
         B=rand(BB,K)*K/nplots
+        #B[5]=B[1]/2
+        #println(" B ",B)
         #B[1]=2
         #B[2]=2
         #B[2]=4
-        #Ax1=rand(nplots,2)
-        #Ax=curvy(1.5,.1,max-min,Ax1).+min
+        Ax1=rand(nplots,2)
+        Ax=curvy(1.5,.1,max-min,Ax1).+min
+        #=
         min=1
         max=5
         a=1.833333333333
@@ -61,6 +64,8 @@ function run()
         c=5.16666666667
         Ax=[a a; a b; a c; b a; b b ; b c;c a ; c b ;c c]
         #Ax=[1 1 ; 1 3.5; 1 2 1.75 ; 2 2 ]
+        =#
+        
         inputs=ones(nplots)
         return K,nplots,Ax,N,idplot,B,inputs
     end
@@ -221,11 +226,14 @@ function run()
         return z
     end
     function f(x)
+        z=10*(x-beta*x^2)
+        #=
         if x>0 
             z=10*x^beta
         else
             z=-1000*x^2
         end
+        =#
         #println(x)
         #z=(real((x.>=0).*(complex.(x)).^beta)).+((x.<0).*(-10000))
         #println(z)
@@ -235,14 +243,37 @@ function run()
         return z
     end
     function g(x)
-        if x>-1 
-            z=log(1+x)
+        z=(x+xi*x^2)
+        #=
+        if x>0 
+            z=x^xi
             #z=x
         else
-            z=-(x+1)^2*1000
+            z=0
             #z=-1000*x^2
             #z=x
         end
+        =#
+        #println(x)
+        #z=(real((x.>=0).*(complex.(x)).^beta)).+((x.<0).*(-10000))
+        #println(z)
+        #if sum(x.<0)>0 
+        #println("prod",x," ",(z))
+        #end
+        return z
+    end
+    function gprime(x)
+        z=2*xi*x
+        #=
+        if x>0 
+            z=xi*x^(xi-1)
+            #z=x
+        else
+            z=0
+            #z=-1000*x^2
+            #z=x
+        end
+        =#
         #println(x)
         #z=(real((x.>=0).*(complex.(x)).^beta)).+((x.<0).*(-10000))
         #println(z)
@@ -293,55 +324,52 @@ function run()
                 distgrid[i,j]=dist(grid[i],grid[j],delta)*area[j]
             end
         end
+        #distgrid=(distgrid.>.5).*distgrid
         #den=maximum(sum(distgrid,dims=2))
         den=(sum(distgrid,dims=2))        
+        #println(" dist grid ", distgrid)
+
         weights=distgrid./den
+        #println(" weights ", weights)
         return weights
     end
    
-    function agprod(inputs,transfer)
+    function agprod(inputs)
         inputsgrid=inputs[:,:]
         aginputs=(inputsgrid.+spill.*(weights*inputsgrid))          
+        #println(" weights ", inputsgrid)
         plotout=(f.(aginputs).*area)'
         plotout=convert(Array{Float64},plotout)        
+        
         price=exp.(gdist*distance).*area        
         bc=((price.*inputs)'*infarmer)'           
-        bc=B.+transfer.-bc
+        bc=(bc.-B)
         #println("bc ", bc)
-        util=g.(bc)'
-        return plotout,util
+        cost=g.(bc)'
+        return plotout,cost
     end
     
 
-    function dagprod(inputs,add3,transferin)
+    function dagprod(inputs,add3)
         #println("hello2")
         dchange=.0000001
-        transfer=transferin[:]
+        
         eye=I(nplots)
         eye=eye[:,add3]
         #println("add3 ",add3)
         inputs1=inputs.+dchange.*eye                     
-        p1,cost1=agprod(inputs,transfer)
-        p2,cost2=agprod(inputs1,transfer)          
+        p1,cost1=agprod(inputs)
+        p2,cost2=agprod(inputs1)      
+        #println("p1 ",p1)    
+        #println("cost1 ",cost1)    
         dagprod2=(p2.-p1)./dchange        
-        dcost=(cost2.-cost1)./dchange        
+        dcost=(cost2.-cost1)./dchange
+        #println("transfer ",transfer)
+        #println("inputs ",inputs)
+        #println("dcost1 ", dcost)        
         return dagprod2,dcost
     end
-
-    function dagprod(inputs,transferin)
-        #println("hello2")
-        dchange=.0000001
-        transfer=transferin[:]
-        eye=I(nfarmers)        
-        #println("add3 ",add3)
-        transfer1=transfer.+dchange.*eye                     
-        p1,cost1=agprod(inputs,transfer)        
-        p2,cost2=agprod(inputs,transfer1)          
-        #dagprod2=(p2.-p1)./dchange        
-        dcost=(cost2.-cost1)./dchange        
-        return dcost
-    end
-
+    
 
     function indmaxso1(inputs,mu)
                 
@@ -350,16 +378,21 @@ function run()
             #c=inplam[xnk+1]                    
             xinputs3=xinputs2[:]
             xinputs3[xstart:xend]=inplam[1:xnk]        
-            transfersin=zeros(nfarmers)            
-            dplotout,dcost=dagprod(xinputs3,xstart:xend,transfersin)   
+ 
+            dplotout,dcost=dagprod(xinputs3,xstart:xend)   
+            #println(" dplotout ",dplotout)
+            #println(" dcost ",dcost)
             #println("xstart ",xstart)
             #println("dcost ",dcost)
+
             wtfarmer=(1-mu)*infarmer+mu*ones(nplots,nfarmers)            
+            #println("wt farmer ",wtfarmer)
             dplotout=dplotout*wtfarmer
             #println(wtfarmercost)
             dp1=dplotout[:,xk]        
             pr1=dcost[:,xk]           
-            deriv=dp1 .+pr1   #-1000*(inplam[1:xnk].<0).*inplam[1:xnk]
+            deriv=dp1 .-pr1   #-1000*(inplam[1:xnk].<0).*inplam[1:xnk]
+            #println("deriv ",deriv)
             Gfun[1:xnk]=deriv
         end
         
@@ -375,13 +408,13 @@ function run()
         #lamvec1=ones(K)
         #lamvec2=lamvec1[:]
         while del>.00001
-        # @sync @distributed for k=1:K            
-            for k=1:K     
+        @sync @distributed for k=1:K            
+           # for k=1:K     
                 xstart=idplot[k,1]
                 xend=xstart+N[k]-1
                 xk=k
                 xnk=N[k]
-                start3=xinputs[xstart:xend]            
+                start3=xinputs[xstart:xend]                         
                 z1=nlsolve(nlf!,start3,show_trace=false,ftol=1e-8)     
                 xinputs1[xstart:xend]=z1.zero            
             end
@@ -396,48 +429,45 @@ function run()
         #println(xinputs')   
         price=exp.(gdist*distance).*area
         
-        transfers=zeros(nfarmers)
-        prof,ut1=agprod(xinputs,transfers)
-        prof=(prof*infarmer)
-        util=prof+ut1
+        
+        prof,cost=agprod(xinputs)
+        prof1=(prof*infarmer)
+        util=prof1-cost        
         return xinputs,prof,util
     end
+
 
     function indmaxco1(inputs,mu)
                 
         function nlf!(Gfun,inplam)  
             #lambda=inplam[xnk+2]
-            #c=inplam[xnk+1]                    
+            #c=inplam[xnk+1]        
+                   
             xinputs3=xinputs2[:]
             xinputs3[xstart:xend]=inplam[1:xnk]
-            transfersin=xtransferlam[1:nfarmers]                    
-            dplotout,dcost=dagprod(xinputs3,xstart:xend,transfersin)   
             
+            #println("inputs ",xinputs3)
+            price=exp.(gdist*distance).*area
+            tinputs=xinputs3'*price/nfarmers
+            tstock=sum(B)/nfarmers
+            lambda=-gprime(tinputs-tstock)
+            
+            dplotout,dcost=dagprod(xinputs3,xstart:xend)               
             wtfarmer=(1-mu)*infarmer+mu*ones(nplots,nfarmers)            
             dplotout=dplotout*wtfarmer
             #println(wtfarmercost)
-            dp1=dplotout[:,xk]        
-            pr1=dcost[:,xk]   
-            println("dplotout ",dp1)        
-            println("dcost ",dcost)        
-            deriv=dp1 .+pr1   #-1000*(inplam[1:xnk].<0).*inplam[1:xnk]
+            dp1=dplotout[:,xnk]
+         
+            #println("dplotout ",dp1)        
+            #println("dlambda ",lambda)   
+            #println("price ",price)
+            #println(size(dp1),size(lambda),size(price[xstart:xend]))
+            deriv=dp1 .+lambda.*price[xstart:xend]   #-1000*(inplam[1:xnk].<0).*inplam[1:xnk]
+            #println("deriv ",deriv) 
             Gfun[1:xnk]=deriv
         end
         
-        function nlf2!(Gfun,inplam)  
-            #lambda=inplam[xnk+2]
-            #c=inplam[xnk+1]                                
-            transferlam=inplam
-            transfers=transferlam[1:nfarmers]
-            deriv=inplam[:]
-            dcost=dagprod(xinputs2,transfers) 
-            lambda=transferlam[nfarmers+1]                          
-          
-            deriv[1:nfarmers]=diag(dcost).-lambda
-            deriv[nfarmers+1]=sum(transfers)
-            #println("deriv ",deriv)            
-            Gfun[1:nfarmers+1]=deriv
-        end
+ 
 
 
         xinputs1=SharedArray{Float64}(nplots)
@@ -462,71 +492,28 @@ function run()
                 xnk=N[k]
                 start3=xinputs[xstart:xend]            
                 z1=nlsolve(nlf!,start3,show_trace=false,ftol=1e-8)     
-                xinputs1[xstart:xend]=z1.zero 
-                println("xinputs1 ",xinputs1)           
+                xinputs2[xstart:xend]=z1.zero 
+                #println("xinputs1 ",xinputs1)           
             end
-            z2=nlsolve(nlf2!,xtransferlam,show_trace=false,ftol=1e-8)
-            xtransferlam2=z2.zero
-            println("xtransfer ",xtransferlam2)
-            xtransferlam=.8*xtransferlam2+.2*xtransferlam
-            #lamvec1=lamvec2[:]        
-            xinputs2=xinputs1[:]
+            #xinputs2=xinputs1[:]
             del1=xinputs2-xinputs
             xinputs=.8*xinputs2+.2*xinputs
             del=del1'del1/nplots  
             println("del ",del)
         end
-        inpt=0
-        println("B ",B')
-        println("xtransferlam ",xtransferlam')
-        println("xinputs ",xinputs')   
-        price=exp.(gdist*distance).*area        
-        prof,ut1=agprod(xinputs,xtransferlam[1:nfarmers])
-        prof=(prof*infarmer)
-        util=prof+ut1        
+        inpt=0                  
+        prof,cost=agprod(xinputs)
+        prof1=(prof*infarmer)        
+        price=exp.(gdist*distance).*area
+        tinputs=xinputs'*price/nfarmers
+        tstock=sum(B)/nfarmers
+        cost=g(tinputs-tstock)/nfarmers
+        println(" cost ",cost)
+        
+        util=prof1.-cost        
         return xinputs,prof,util
     end
-    function indmaxco(xinputs)
-        
-        function nlf!(Gfun,inplam)     
-            #println("inplam ",inplam)         
-            lambda=(inplam[nplots+1])
-            inputs=inplam[1:nplots]
-            plotout,tinputs=agprod(inputs,inplot,inplot)
-            #println(inputs," ",inplot)
-          
-            #println(inputs)
-            #println(lambda)
-
-            dplotout=dagprod(inputs,inplot,inplot)
-            
-            #println(dplotout)
-            #println(size(dplotout))
-            dplotout=sum(dplotout,dims=1)'           
-            tinputs=tinputs*exp.(gdist*distance)
-            #for i=1:nplots
-            #Gfun[i]=dplotout[i]-lambda*exp.(gdist*distance[i])*area[i]
-            #end
-            #println(size(dplotout),size(lambda),size(gdist),size(distance),size(area))
-            Gfun[1:nplots]=dplotout-lambda*exp.(gdist*distance).*area
-            
-            bc=tB-tinputs[1]
-            #println(size(Gfun),size(tB),size(tinputs))
-            Gfun[nplots+1]=bc
-            #G1[:]=G
-           # println("F" ,G)
-           # println(Gfun)
-           #println(typeof(Gfun))
-        end
-        
-        start3=ones(nplots+1)
-        z1=nlsolve(nlf!,start3,show_trace=false,ftol=.001)
-        inall=ones(n2,1)
-        prof,inpt=agprod(z1.zero[1:nplots],inplot,inplot)
-        #println(z1.zero)
-        return z1.zero,prof
-    end
-
+   
     
     function mnneighbors(input,prplotv)
         function ln(x)
@@ -594,7 +581,7 @@ function run()
 
 
 
-    nfarmers=5#number farmers
+    nfarmers=50#number farmers
     
     min=1
     max=trunc(2*sqrt(nfarmers))
@@ -603,20 +590,23 @@ function run()
     #println(max)
     step=.1 #.1 #distance between grid points4
     plotdist=2:2 #1:3 #distriubtion of Plots
-    Bdist=30:30 #distribution of endowments
-    delta=1 #how fast to spillovers fall off
-    spill=0#-.1 #spillover coefficient
+    Bdist=10:10 #distribution of endowments
+    delta=.75 #how fast to spillovers fall off
+    spill=-.5#-.1 #spillover coefficient
     maxin=1200  #max number of neighbors 
-    gdist=0#.0001 #coefficient on cost of distance from plot 
+    gdist=0.001#.0001 #coefficient on cost of distance from plot 
     scorr=-.5  #spatial correlation of plot sizes
     cellsperacre=((max-min)/step+1)^2/(max-min)^2
       
-    NN=2:2
+    #NN=2:2
     xgrid=[i for i=min:step:max]
    
     #n=size(xgrid)[1]
     #n2=n*n
-    beta=1/2
+    #beta=1/2
+    #xi=2
+    beta=.01
+    xi=.05
     K,nplots,Ax,N,idplot,B,inputs=createdata(nfarmers,plotdist,Bdist,min,step,max)
     n=nplots
     n2=nplots
@@ -654,7 +644,7 @@ function run()
     @time inputsmasv,profitsmasv,utilmasv=indmaxso1(inputs,0)
     #time inputsmasv,profitsmasv=indmaxma(inputs)
     bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,mnarea,areacov=0,0,0,0,0,0,0,0
-    #bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,mnarea,areacov=mnneighbors(inputsmasv[1:nplots],profitsmasv)
+    bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,mnarea,areacov=mnneighbors(inputsmasv[1:nplots],profitsmasv)
     
     #println(profitsv)
     println("now so")
@@ -672,6 +662,12 @@ function run()
 end   
 
 inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv,inputssosv,inputscosv,profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv=run()
+global output=DataFrame(ima=inputsmasv,iso=inputssosv,ico=inputscosv,pma=vec(profitsmasv),pso=vec(profitssosv),pco=vec(profitscosv))
+
+
 println(sum(utilmasv))
 println(sum(utilsosv))
 println(sum(utilcosv))
+
+scatter(inputsmasv,inputscosv)
+scatter!(inputsmasv,inputssosv)
