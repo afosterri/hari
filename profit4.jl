@@ -426,8 +426,7 @@ function run()
             println("del ",del)
         end
         inpt=0
-        #println(xinputs')   
-        price=exp.(gdist*distance).*area
+        #println(xinputs')           
         
         
         prof,cost=agprod(xinputs)
@@ -578,19 +577,15 @@ function run()
         println(bhat5)
         return bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,mnarea,areacov
     end
-
-
-
     nfarmers=50#number farmers
-    
     min=1
     max=trunc(2*sqrt(nfarmers))
     max=convert(Int64,max)
-    max=6
+    #max=6
     #println(max)
     step=.1 #.1 #distance between grid points4
-    plotdist=2:2 #1:3 #distriubtion of Plots
-    Bdist=10:10 #distribution of endowments
+    plotdist=1:3 #1:3 #distriubtion of Plots
+    Bdist=20:40 #distribution of endowments
     delta=.75 #how fast to spillovers fall off
     spill=-.5#-.1 #spillover coefficient
     maxin=1200  #max number of neighbors 
@@ -669,5 +664,16 @@ println(sum(utilmasv))
 println(sum(utilsosv))
 println(sum(utilcosv))
 
-scatter(inputsmasv,inputscosv)
-scatter!(inputsmasv,inputssosv)
+scatter(areasv,inputssosv,xlabel="Plot Area",ylabel="Input/Area",label="Cooperative",legend_position=:topleft)
+scatter!(areasv,inputscosv,label="Social Planner")
+pinput=scatter!(areasv,inputsmasv,label="Nash")
+
+scatter(areasv,vec(profitssosv)./areasv,xlabel="Plot Area",ylabel="Output/Area",label="Cooperative",legend_position=:topleft)
+scatter!(areasv,vec(profitscosv)./areasv,label="Social Planner")
+poutput=scatter!(areasv,vec(profitsmasv)./areasv,label="Nash")
+areafarm=(areasv'*infarmer)'
+scatter(areafarm,vec(utilsosv)./areafarm,xlabel="Farm Area",ylabel="Profit/Area",label="Cooperative",legend_position=:topleft)
+scatter!(areafarm,vec(utilcosv)./areafarm,label="Social Planner")
+pnet=scatter!(areafarm,vec(utilmasv)./areafarm,label="Nash")
+
+
