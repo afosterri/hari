@@ -87,55 +87,6 @@ function run()
         out=a[d,:];
         out=vcat(out,transpose(out[1,:]))
     end
-    function spacecorr(A1x,sc,min,step,max)
-        #perturbs locations so plots are more or less close depending on sc
-        Ax=A1x[:,:]            
-        Bx=A1x[:,:]
-        
-        for i=1:5
-        
-        #println("min ",min," ", max)
-        
-        wt=exp.(-((Ax[:,1].-Ax[:,1]').^2+(Ax[:,2].-Ax[:,2]').^2).^(1/2))
-                dx=wt*Ax[:,1]./sum(wt,dims=2)-Ax[:,1]
-        dy=wt*Ax[:,2]./sum(wt,dims=2)-Ax[:,2]
-        
-            for n=1:nplots
-                if mod(n,2)==0
-                Bx[n,1]=Ax[n,1]-dx[n]*sc
-                Bx[n,2]=Ax[n,2]-dy[n]*sc
-                else
-                Bx[n,1]=Ax[n,1]+dx[n]*sc
-                Bx[n,2]=Ax[n,2]+dy[n]*sc
-                end
-                #println(Bx[n,1]," ",Ax[n,1])
-                #println("BB1 ",Bx[n,1])
-                #println("BB2 ",Bx[n,2])
-                #don't move outside boundaries
-                
-                if Bx[n,1]<min 
-                    Bx[n,1]=Ax[n,1]
-                end
-                if Bx[n,1]>max 
-                    Bx[n,1]=Ax[n,1]
-                end
-                if Bx[n,2]<min 
-                    Bx[n,2]=Ax[n,2]
-                end
-                if Bx[n,2]>max 
-                    Bx[n,2]=Ax[n,2]
-                end
-            
-                #println("NBB1 ",Bx[n,1])
-                #println("NBB2 ",Bx[n,2])
-                
-            end
-        Ax=Bx[:,:]
-        #println("BX ",Bx)
-        end
-        
-        return(Bx)
-    end
     function comparea(Ax,min,max)
         #computes the area of plots
         nr=size(Ax)[1]
@@ -584,13 +535,12 @@ function run()
     #max=6
     #println(max)
     step=.1 #.1 #distance between grid points4
-    plotdist=1:3 #1:3 #distriubtion of Plots
+    plotdist=1:5 #1:3 #distriubtion of Plots
     Bdist=20:40 #distribution of endowments
     delta=.75 #how fast to spillovers fall off
     spill=-.5#-.1 #spillover coefficient
     maxin=1200  #max number of neighbors 
-    gdist=0.001#.0001 #coefficient on cost of distance from plot 
-    scorr=-.5  #spatial correlation of plot sizes
+    gdist=0.00#.0001 #coefficient on cost of distance from plot 
     cellsperacre=((max-min)/step+1)^2/(max-min)^2
       
     #NN=2:2
@@ -607,7 +557,6 @@ function run()
     n2=nplots
     tB=sum(B) 
     Ax2=Ax[:,:]
-    #Ax2=spacecorr(Ax,scorr,min,step,max)
     println("Ax ",Ax)
     println("Ax2 ",Ax2)
     Ax=Ax2[:,:]
