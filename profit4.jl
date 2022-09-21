@@ -1,9 +1,9 @@
-using Distributed
+using Distributed, XLSX, JLD
 @everywhere using Delaunay, VoronoiCells, GeometryBasics, Random, PolygonOps, Plots, Optim, Roots
 @everywhere using DataFrames, Econometrics, StatsBase, Distributed, SharedArrays, ForwardDiff,NLsolve,LinearAlgebra
-Random.seed!(1001)
 
-function run()
+
+function run(delta,spill)
 
     function disttoplot(Ax)
         nplots=size(Ax)[1]
@@ -19,18 +19,19 @@ function run()
         end
         z1=zeros(nplots,2)
         z=0
-    for i=1:nplots
-    z=Ax[i,1]
-    
-    z1[i,1]=find_zero(f1,y1/2)/beta
-    z=Ax[i,2]
-    z1[i,2]=find_zero(f1,y1/2)/beta
-    #println(z1[i,:])
-    end
-    return z1 
+        for i=1:nplots
+        z=Ax[i,1]
+        
+        z1[i,1]=find_zero(f1,y1/2)/beta
+        z=Ax[i,2]
+        z1[i,2]=find_zero(f1,y1/2)/beta
+        #println(z1[i,:])
+        end
+        return z1 
     end
 
     function createdata(K,NN,BB,min,step,max) 
+        Random.seed!(1001)
         #creates plots for K farmers, NN is distribution of number of plots, BB is range of input dist, min max is range of locations  
         N=rand(NN,K)
         #println("N ",N)
@@ -134,7 +135,7 @@ function run()
         annotate!([(points[n][1] + 0.02, points[n][2] + 0.03, Plots.text(n)) for n in 1:nr])
         zp=plot!(tess, legend = :topleft)
         display(zp)
-        return area, Pmat,center
+        return area, Pmat,center,tess
     end
     function xwalkfind(Ax,Pmat);
         #creates crosswalk of neighboring plots
@@ -261,6 +262,8 @@ function run()
         infarmer=inplot*plotfarmer
         return inplot,infarmer,plotfarmer
     end
+    
+
     function weights(centers)
         #grid=[[xgrid[i] xgrid[j]] for i=1:n for  j=1:n]
         grid=[centers[i,:] for i=1:nplots]
@@ -285,6 +288,57 @@ function run()
         return weights
     end
    
+    function areaweights(centers,tess)
+    
+    
+        ngrid=convert(Int64,ceil((max-min)/dgrid)+1)
+        mat=SharedArray{Float64}(ngrid,ngrid)
+        ivec=[i for i=min:dgrid:max]
+        jvec=[j for j=min:dgrid:max]
+        @sync @distributed for i=1:ngrid
+            x=ivec[i]
+            for j=1:ngrid
+                y=jvec[j]    
+                for n=1:nplots
+                    cell=[tess.Cells[n];[tess.Cells[n][1]]]         
+                    inthere=PolygonOps.inpolygon([x,y],cell)
+                    #println("flag ",inthere," ",x," ",y)
+                    if inthere!=0
+                        #println("flag2 ",inthere," ",x," ",y)
+                        mat[i,j]=n
+                        break
+                    end                        
+                end
+        
+            end
+        end
+        
+        weights=SharedArray{Float64}(nplots,nplots)
+        onev=ones(ngrid^2)
+        
+        vmat=vec(mat)
+        #println("ivec ",ivec)
+        #println("j vec" ,jvec)
+        @sync @distributed for k=1:nplots
+            dist=vec(sqrt.((ivec.-centers[k,1]).^2 .+ (jvec'.-centers[k,2]).^2))
+           
+            dwt=(1 ./ (1 .+ exp.(dist./delta)))*dgrid^2
+            
+            for l=1:nplots    
+                weights[k,l]=sum(dwt[vmat.==l]) 
+            end
+        
+        end
+        weights=weights./sum(weights,dims=2)
+        #println("centers ",center')
+        #z1=plot(tess)
+        #display(z1)
+        #println("mat ",weights)
+        return weights
+        end
+        
+
+
     function agprod(inputs)
         inputsgrid=inputs[:,:]
         aginputs=(inputsgrid.+spill.*(weights*inputsgrid))          
@@ -495,6 +549,7 @@ function run()
                 owner[idplot[k,i]]=k
             end    
         end
+        mnn=sum(nmat,dims=2)
         #println(plottarea)
         #println(plotB)
         sparseplottarea=nmat.*ln(plottarea)'
@@ -506,18 +561,21 @@ function run()
     
         areavec=vec(area)
         prplotvec=vec(prplotv)
-
-        global data=DataFrame(input=input,area=areavec,mninput=mninput,mnareaf=mnareaf,mnareap=mnareap,plotB=plotB,plottarea=plottarea,owner=owner,prplotv=prplotvec,distance=distance,mndist=mndist,plotherf=plotherf,mnherf=mnherf)
+        mnn=vec(mnn)
+        xinput=ln(input)
+        xareavec=ln(areavec)
+        xprplotvec=ln(prplotvec)
+        global data=DataFrame(input=xinput,area=xareavec,mninput=mninput,mnareaf=mnareaf,mnareap=mnareap,plotB=plotB,plottarea=plottarea,owner=owner,prplotv=xprplotvec,distance=distance,mndist=mndist,plotherf=plotherf,mnherf=mnherf,mnn=mnn)
         mnarea=sum(Matrix(data[:,["area", "mnareap","input","prplotv"]]))/nplots
         areacov=cov(Matrix(data[:,["area", "mnareap","input","prplotv"]]))
-        bhat0a=fit(EconometricModel, @formula(input~area+mnareap+absorb(owner)),data)
-        bhat0=fit(EconometricModel, @formula(input~area+distance+mnareap+mnareaf+mndist+mnherf+absorb(owner)),data)
-        bhat1=fit(EconometricModel, @formula(mninput~mnareaf+mnareap+area+distance+mndist+mnherf+absorb(owner)),data)
-        bhat1a=fit(EconometricModel, @formula(mninput~mnareaf+mnareap+area+plottarea +distance+mndist+plotherf+mnherf ),data)
-        bhat2=fit(EconometricModel, @formula(input ~ area +distance+ absorb(owner)+ (mninput~mnareaf+mnareap+mndist + mnherf)),data)
-        bhat3=fit(EconometricModel, @formula(prplotv ~ area + distance+ absorb(owner)+ (mninput~mnareaf+mnareap+mndist + mnherf)),data)
-        bhat4=fit(EconometricModel, @formula(input ~ area +plottarea+ distance +plotherf+(mninput~mnareaf+mnareap+mndist+mnherf)),data)
-        bhat5=fit(EconometricModel, @formula(prplotv ~ area +plottarea+distance+plotherf+ (mninput~mnareaf+mnareap+mndist+mnherf)),data)
+        bhat0a=fit(EconometricModel, @formula(input~area+mnn+mnareap+absorb(owner)),data)
+        bhat0=fit(EconometricModel, @formula(input~area+distance+mnn+mnareap+mnareaf+mndist+mnherf+absorb(owner)),data)
+        bhat1=fit(EconometricModel, @formula(mninput~mnareaf+mnareap+area+mnn+distance+mndist+mnherf+absorb(owner)),data)
+        bhat1a=fit(EconometricModel, @formula(mninput~mnareaf+mnareap+area+mnn+plottarea +distance+mndist+plotherf+mnherf ),data)
+        bhat2=fit(EconometricModel, @formula(input ~ area +distance+mnn+ absorb(owner)+ (mninput~mnareaf+mnareap+mndist + mnherf)),data)
+        bhat3=fit(EconometricModel, @formula(prplotv ~ area + distance+mnn+ absorb(owner)+ (mninput~mnareaf+mnareap+mndist + mnherf)),data)
+        bhat4=fit(EconometricModel, @formula(input ~ area +plottarea+ distance +mnn+plotherf+(mninput~mnareaf+mnareap+mndist+mnherf)),data)
+        bhat5=fit(EconometricModel, @formula(prplotv ~ area +plottarea+distance+mnn+plotherf+ (mninput~mnareaf+mnareap+mndist+mnherf)),data)
         print(bhat0a)
         print(bhat0)
         println(bhat1)
@@ -526,25 +584,55 @@ function run()
         println(bhat3)
         println(bhat4)
         println(bhat5)
+        
         return bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,mnarea,areacov
     end
+
+    function fitdata()
+        x1=    XLSX.readxlsx("simom2.xlsx")
+        xs1=x1["Sheet1"]
+        inputcoefs=x1["A1:A4"]
+        yieldcoefs=x1["A15:A18"]
+        inputs=[nfarmers,min,max,plotmin,plotmax,Bmin,Bmax,delta,spill,gdist,alpha,beta,xi,corrx,corry]
+        
+    end
+    function heat(inputmat)
+        function inputv(input,x,y)
+            lev=0 
+            for i=1:nplots
+                cell=[tesssv.Cells[i];[tesssv.Cells[i][1]]] 
+                incheck=PolygonOps.inpolygon([x,y],cell)
+              
+                if incheck!=0
+                    lev=input[i]
+                    break
+                end
+            end
+            return lev
+        end
+        x=min:dgrid:max  
+        heatmap(x,x,(x1,y1)->log(inputv(inputmat,x1,y1)), c=:thermal, clims=(0,4))
+        plot!(tesssv)
+    end
+
+
     nfarmers=50#number farmers
     min=1
     max=trunc(2*sqrt(nfarmers))
     max=convert(Int64,max)
     #max=6
     #println(max)
-    step=.1 #.1 #distance between grid points4
+    dgrid=.01 #.1 #distance between grid points4
     plotdist=1:5 #1:3 #distriubtion of Plots
     Bdist=20:40 #distribution of endowments
-    delta=.75 #how fast to spillovers fall off
-    spill=-.5#-.1 #spillover coefficient
+    #delta=.75 #how fast to spillovers fall off
+    #spill=-.5#-.1 #spillover coefficient
     maxin=1200  #max number of neighbors 
     gdist=0.00#.0001 #coefficient on cost of distance from plot 
-    cellsperacre=((max-min)/step+1)^2/(max-min)^2
+    #cellsperacre=((max-min)/step+1)^2/(max-min)^2
       
     #NN=2:2
-    xgrid=[i for i=min:step:max]
+    #xgrid=[i for i=min:step:max]
    
     #n=size(xgrid)[1]
     #n2=n*n
@@ -557,17 +645,18 @@ function run()
     n2=nplots
     tB=sum(B) 
     Ax2=Ax[:,:]
-    println("Ax ",Ax)
-    println("Ax2 ",Ax2)
+    #println("Ax ",Ax)
+    #println("Ax2 ",Ax2)
     Ax=Ax2[:,:]
     Btot=sum(B)
-    println("Btot ",Btot)
+    #println("Btot ",Btot)
     distance=disttoplot(Ax)
     global distsv=distance
     global Axsv=Ax
     nmat=findneighbor(Ax)
     global nmatsv=nmat
-    area,Pmat,centers=comparea(Ax,min,max)
+    area,Pmat,centers,tess=comparea(Ax,min,max)
+    global tesssv=tess
     Ax=centers[:,:]
     xwalk,Pmat2=xwalkfind(Ax,Pmat)
     #println(Pmat2)
@@ -578,8 +667,11 @@ function run()
     global polotfarm1=plotfarmer
     disttogrid=inplot*distance
     #println(centers)
-    weights=weights(centers)
-    global weightsv=weights
+    weights1=weights(centers)
+    weights2=areaweights(centers,tess)
+    global weightsv1=weights1
+    global weightsv2=weights2
+    weights=weightsv2
     #println(weights)
     #println(n)
     #println("sum grid ",sum(inplot,dims=2))
@@ -602,16 +694,35 @@ function run()
     #inputscosv=zeros(nplots)
     #profitscosv=zeros(nplots)
     global wtsv=weights*inplot
+
+    global zma=heat(inputsmasv)
+    global zso=heat(inputssosv)
+    global zco=heat(inputscosv)
+
     return(inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv[1:nplots],inputssosv[1:nplots],inputscosv[1:nplots],profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv)
 end   
+#=
+results=zeros(5,5,7)
+global i1=0
+for delta=.25:.25:1.25
+    global i1=i1+1
+    global j1=0
+    for spill=-.5:.25:.5 
+        global j1=j1+1
+        inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv,inputssosv,inputscosv,profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv=run(delta,spill)
+        global output=DataFrame(ima=inputsmasv,iso=inputssosv,ico=inputscosv,pma=vec(profitsmasv),pso=vec(profitssosv),pco=vec(profitscosv))
+        c1=coef(bhat2)
+        c2=coef(bhat3)
+        results[i1,j1,:]=[sum(utilmasv),sum(utilsosv),sum(utilcosv),c1[2],c1[5],c2[2],c2[5]]
 
-inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv,inputssosv,inputscosv,profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv=run()
-global output=DataFrame(ima=inputsmasv,iso=inputssosv,ico=inputscosv,pma=vec(profitsmasv),pso=vec(profitssosv),pco=vec(profitscosv))
+        println(sum(utilmasv))
+        println(sum(utilsosv))
+        println(sum(utilcosv))
+    end
+end
+=#
+inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv,inputssosv,inputscosv,profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv=run(.75,-.5)
 
-
-println(sum(utilmasv))
-println(sum(utilsosv))
-println(sum(utilcosv))
 
 scatter(areasv,inputssosv,xlabel="Plot Area",ylabel="Input/Area",label="Cooperative",legend_position=:topleft)
 scatter!(areasv,inputscosv,label="Social Planner")
@@ -625,4 +736,12 @@ scatter(areafarm,vec(utilsosv)./areafarm,xlabel="Farm Area",ylabel="Profit/Area"
 scatter!(areafarm,vec(utilcosv)./areafarm,label="Social Planner")
 pnet=scatter!(areafarm,vec(utilmasv)./areafarm,label="Nash")
 
-
+display(zma)
+display(zso)
+display(zco)
+savefig(zma,"Nashheat.png")
+savefig(zso,"Coopheat.png")
+savefig(zco,"Egalheat.png")
+savefig(pinput,"Inputs.png")
+savefig(poutput,"Outputs.png")
+savefig(pnet,"Profits.png")
