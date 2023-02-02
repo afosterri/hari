@@ -3,7 +3,7 @@ using Distributed, XLSX, JLD
 @everywhere using DataFrames, Econometrics, StatsBase, Distributed, SharedArrays, ForwardDiff,NLsolve,LinearAlgebra
 
 
-function run(delta,spill)
+function run(delta,spill,maonly)
 
     function disttoplot(Ax)
         nplots=size(Ax)[1]
@@ -564,18 +564,19 @@ function run(delta,spill)
         mnn=vec(mnn)
         xinput=ln(input)
         xareavec=ln(areavec)
+        xareavec2=xareavec.^2
         xprplotvec=ln(prplotvec)
-        global data=DataFrame(input=xinput,area=xareavec,mninput=mninput,mnareaf=mnareaf,mnareap=mnareap,plotB=plotB,plottarea=plottarea,owner=owner,prplotv=xprplotvec,distance=distance,mndist=mndist,plotherf=plotherf,mnherf=mnherf,mnn=mnn)
+        global data=DataFrame(input=xinput,area=xareavec,area2=xareavec2,mninput=mninput,mnareaf=mnareaf,mnareap=mnareap,plotB=plotB,plottarea=plottarea,owner=owner,prplotv=xprplotvec,distance=distance,mndist=mndist,plotherf=plotherf,mnherf=mnherf,mnn=mnn)
         mnarea=sum(Matrix(data[:,["area", "mnareap","input","prplotv"]]))/nplots
         areacov=cov(Matrix(data[:,["area", "mnareap","input","prplotv"]]))
-        bhat0a=fit(EconometricModel, @formula(input~area+mnn+mnareap+absorb(owner)),data)
-        bhat0=fit(EconometricModel, @formula(input~area+distance+mnn+mnareap+mnareaf+mndist+mnherf+absorb(owner)),data)
-        bhat1=fit(EconometricModel, @formula(mninput~mnareaf+mnareap+area+mnn+distance+mndist+mnherf+absorb(owner)),data)
-        bhat1a=fit(EconometricModel, @formula(mninput~mnareaf+mnareap+area+mnn+plottarea +distance+mndist+plotherf+mnherf ),data)
-        bhat2=fit(EconometricModel, @formula(input ~ area +distance+mnn+ absorb(owner)+ (mninput~mnareaf+mnareap+mndist + mnherf)),data)
-        bhat3=fit(EconometricModel, @formula(prplotv ~ area + distance+mnn+ absorb(owner)+ (mninput~mnareaf+mnareap+mndist + mnherf)),data)
-        bhat4=fit(EconometricModel, @formula(input ~ area +plottarea+ distance +mnn+plotherf+(mninput~mnareaf+mnareap+mndist+mnherf)),data)
-        bhat5=fit(EconometricModel, @formula(prplotv ~ area +plottarea+distance+mnn+plotherf+ (mninput~mnareaf+mnareap+mndist+mnherf)),data)
+        bhat0a=fit(EconometricModel, @formula(input~area+area2+mnn+mnareap+absorb(owner)),data)
+        bhat0=fit(EconometricModel, @formula(input~area+area2+distance+mnn+mnareap+mnareaf+mndist+mnherf+absorb(owner)),data)
+        bhat1=fit(EconometricModel, @formula(mninput~mnareaf+mnareap+area+area2+mnn+distance+mndist+mnherf+absorb(owner)),data)
+        bhat1a=fit(EconometricModel, @formula(mninput~mnareaf+mnareap+area+area2+mnn+plottarea +distance+mndist+plotherf+mnherf ),data)
+        bhat2=fit(EconometricModel, @formula(input ~ area+area2 +distance+mnn+ absorb(owner)+ (mninput~mnareaf+mnareap+mndist + mnherf)),data)
+        bhat3=fit(EconometricModel, @formula(prplotv ~ area +area2+ distance+mnn+ absorb(owner)+ (mninput~mnareaf+mnareap+mndist + mnherf)),data)
+        bhat4=fit(EconometricModel, @formula(input ~ area +area2+plottarea+ distance +mnn+plotherf+(mninput~mnareaf+mnareap+mndist+mnherf)),data)
+        bhat5=fit(EconometricModel, @formula(prplotv ~ area+area2 +plottarea+distance+mnn+plotherf+ (mninput~mnareaf+mnareap+mndist+mnherf)),data)
         print(bhat0a)
         print(bhat0)
         println(bhat1)
@@ -588,14 +589,7 @@ function run(delta,spill)
         return bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,mnarea,areacov
     end
 
-    function fitdata()
-        x1=    XLSX.readxlsx("simom2.xlsx")
-        xs1=x1["Sheet1"]
-        inputcoefs=x1["A1:A4"]
-        yieldcoefs=x1["A15:A18"]
-        inputs=[nfarmers,min,max,plotmin,plotmax,Bmin,Bmax,delta,spill,gdist,alpha,beta,xi,corrx,corry]
-        
-    end
+  
     function heat(inputmat)
         function inputv(input,x,y)
             lev=0 
@@ -604,14 +598,17 @@ function run(delta,spill)
                 incheck=PolygonOps.inpolygon([x,y],cell)
               
                 if incheck!=0
-                    lev=input[i]
+                    lev=log(input[i])
                     break
                 end
             end
             return lev
         end
         x=min:dgrid:max  
-        heatmap(x,x,(x1,y1)->log(inputv(inputmat,x1,y1)), c=:thermal, clims=(0,4))
+        z=inputmat
+        zmax=ceil(log(maximum(z)))
+        println("zmax ",zmax)
+        heatmap(x,x,(x1,y1)->inputv(inputmat,x1,y1), c=:thermal, clims=(0,zmax))
         plot!(tesssv)
     end
 
@@ -681,23 +678,54 @@ function run(delta,spill)
     #time inputsmasv,profitsmasv=indmaxma(inputs)
     bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,mnarea,areacov=0,0,0,0,0,0,0,0
     bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,mnarea,areacov=mnneighbors(inputsmasv[1:nplots],profitsmasv)
-    
-    #println(profitsv)
-    println("now so")
-    @time inputssosv,profitssosv,utilsosv=indmaxso1(inputs,1)
-    #time inputssosv,profitssosv=indmaxso(inputs)
-    #println(profitsosv)
-    #println(infarmer)
-    #println(B)
-    #inputscosv,profitscosv=indmaxco(inputs)
-    @time inputscosv,profitscosv,utilcosv=indmaxco1(inputs,1)
-    #inputscosv=zeros(nplots)
-    #profitscosv=zeros(nplots)
-    global wtsv=weights*inplot
+    inputssosv,profitssosv,utilsosv=zeros(nplots),zeros(nplots),zeros(nplots)
+    inputscosv,profitscosv,utilcosv=zeros(nplots),zeros(nplots),zeros(nplots)
+    if maonly==false 
+        #println(profitsv)
+        println("now so")
+        @time inputssosv,profitssosv,utilsosv=indmaxso1(inputs,1)
+        #time inputssosv,profitssosv=indmaxso(inputs)
+        #println(profitsosv)
+        #println(infarmer)
+        #println(B)
+        #inputscosv,profitscosv=indmaxco(inputs)
+        @time inputscosv,profitscosv,utilcosv=indmaxco1(inputs,1)
+        #inputscosv=zeros(nplots)
+        #profitscosv=zeros(nplots)
+        global wtsv=weights*inplot
 
-    global zma=heat(inputsmasv)
-    global zso=heat(inputssosv)
-    global zco=heat(inputscosv)
+        global zma=heat(inputsmasv)
+        global zso=heat(inputssosv)
+        global zco=heat(inputscosv)
+    end
+
+    function fitdata()
+        x1=    XLSX.readxlsx("simom2.xlsx")
+        println(x1)
+        xs1=x1["Sheet1"]
+        inputcoefs=xs1["A1:A8"][[2 3 7],1]
+        yieldcoefs=xs1["A15:A22"][[2 3 7],1]
+        parm=[75., -.5]
+        results=Optim.optimize(sse,parm,g_tol=.001)
+    end
+    function sse(parm)
+        delta=parm[1]
+        spill=parm[2]    
+        inputs=inputsmasv
+        @time inputsmasv,profitsmasv,utilmasv=indmaxso1(inputs,0)
+        bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,mnarea,areacov=0,0,0,0,0,0,0,0
+        bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,mnarea,areacov=mnneighbors(inputsmasv[1:nplots],profitsmasv)
+        vecsim1=bhat2.β[[2 3 6]] 
+        vecsim2=bhat3.β[[2 3 6]]
+        vecsim=vcat(vecsim1',vecsim2')
+        vecdat=vcat(inputcoefs,yieldcoefs)
+        dvec=vecsim-vecdat
+        sse=(dvec'*dvec)[1,1]
+        println("sse momenges ",sse," delta ", delta,"spill",spill)
+        return sse
+    end
+    fitdata()
+
 
     return(inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv[1:nplots],inputssosv[1:nplots],inputscosv[1:nplots],profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv)
 end   
@@ -709,7 +737,7 @@ for delta=.25:.25:1.25
     global j1=0
     for spill=-.5:.25:.5 
         global j1=j1+1
-        inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv,inputssosv,inputscosv,profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv=run(delta,spill)
+        inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv,inputssosv,inputscosv,profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv=run(delta,spill,false)
         global output=DataFrame(ima=inputsmasv,iso=inputssosv,ico=inputscosv,pma=vec(profitsmasv),pso=vec(profitssosv),pco=vec(profitscosv))
         c1=coef(bhat2)
         c2=coef(bhat3)
@@ -721,8 +749,14 @@ for delta=.25:.25:1.25
     end
 end
 =#
-inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv,inputssosv,inputscosv,profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv=run(.75,-.5)
 
+
+
+
+
+inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv,inputssosv,inputscosv,profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv=run(.75,-.5,true)
+
+#=
 
 scatter(areasv,inputssosv,xlabel="Plot Area",ylabel="Input/Area",label="Cooperative",legend_position=:topleft)
 scatter!(areasv,inputscosv,label="Social Planner")
@@ -745,3 +779,4 @@ savefig(zco,"Egalheat.png")
 savefig(pinput,"Inputs.png")
 savefig(poutput,"Outputs.png")
 savefig(pnet,"Profits.png")
+=#
