@@ -1,19 +1,20 @@
 using Distributed, XLSX, JLD
-@everywhere using Delaunay, VoronoiCells, GeometryBasics, Random, PolygonOps, Plots, Optim, Roots
+
+@everywhere using Delaunay, VoronoiCells, GeometryBasics, Random, PolygonOps, Plots, Optim, Roots, JLD2
 @everywhere using DataFrames, Econometrics, StatsBase, Distributed, SharedArrays, ForwardDiff,NLsolve,LinearAlgebra
 
 
-function run(delta,spill,maonly)
+function run(deltagrid,spillgrid,maonly)
 
     function disttoplot(Ax)
         nplots=size(Ax)[1]
         distance=sqrt.(Ax[:,1].^2 .+ Ax[:,2].^2)
         return distance
     end
-    function curvy(beta,delta,y1,Ax)
+    function curvy(beta1,delta1,y1,Ax)
         function f1(_Z)
            
-            out=(-beta*delta*y1*z - beta*y1*z + _Z*delta + cos(beta*y1)*z - cos(_Z) + _Z - z + 1)
+            out=(-beta1*delta1*y1*z - beta1*y1*z + _Z*delta1 + cos(beta1*y1)*z - cos(_Z) + _Z - z + 1)
             #println(out)
             return out
         end
@@ -22,9 +23,9 @@ function run(delta,spill,maonly)
         for i=1:nplots
         z=Ax[i,1]
         
-        z1[i,1]=find_zero(f1,y1/2)/beta
+        z1[i,1]=find_zero(f1,y1/2)/beta1
         z=Ax[i,2]
-        z1[i,2]=find_zero(f1,y1/2)/beta
+        z1[i,2]=find_zero(f1,y1/2)/beta1
         #println(z1[i,:])
         end
         return z1 
@@ -166,10 +167,10 @@ function run(delta,spill,maonly)
         return xwalk,Pmat2
     end
     
-    function dist(x,y,delta)
+    function dist(x,y,delta2)
         
         
-        z=1/(1+exp((((x[1]-y[1])^2+(x[2]-y[2])^2)^(1/2)/delta)-1))
+        z=1/(1+exp((((x[1]-y[1])^2+(x[2]-y[2])^2)^(1/2)/delta2)-1))
         
         #z=0
         #if (sqrt((x[1]-y[1])^2+(x[2]-y[2])^2)<1) 
@@ -533,20 +534,24 @@ function run(delta,spill,maonly)
         mndist=ln.([sum(sparsedist[i,j] for j=1:nplots)/sum(nmat[i,j] for j=1:nplots) for i=1:nplots])
         tarea=zeros(K)
         herf=zeros(K)
+        avdist=zeros(K)
         for k=1:K
             tarea[k]=(sum(area[idplot[k,n]] for n=1:N[k]))
             herf[k]=sum((area[idplot[k,n]]/tarea[k])^2 for n=1:N[k])
+            avdist[k]=sum(distance[idplot[k,n]] for n=1:N[k])/N[k]
         end
         plottarea=zeros(nplots)
         plotherf=zeros(nplots)
         plotB=zeros(nplots)
         owner=zeros(nplots)
+        avdistp=zeros(nplots)
         for k=1:K
             for i=1:N[k]
                 plottarea[idplot[k,i]]=tarea[k] 
                 plotherf[idplot[k,i]]=herf[k] 
                 plotB[idplot[k,i]]=B[k] 
                 owner[idplot[k,i]]=k
+                avdistp[idplot[k,i]]=avdist[k]
             end    
         end
         mnn=sum(nmat,dims=2)
@@ -558,17 +563,23 @@ function run(delta,spill,maonly)
         mnareap=[sum(sparseplotarea[i,j] for j=1:nplots)/sum(nmat[i,j] for j=1:nplots) for i=1:nplots]
         sparseplotherf=nmat.*plotherf'
         mnherf=[sum(sparseplotherf[i,j] for j=1:nplots)/sum(nmat[i,j] for j=1:nplots) for i=1:nplots]
-    
+        println(size(avdistp));
+        println(size(nmat));
+        sparseplotdist=nmat.*avdistp'
+        mnavdist=[sum(sparseplotdist[i,j] for j=1:nplots)/sum(nmat[i,j] for j=1:nplots) for i=1:nplots]
         areavec=vec(area)
         prplotvec=vec(prplotv)
         mnn=vec(mnn)
         xinput=ln(input)
         xareavec=ln(areavec)
         xareavec2=xareavec.^2
-        xprplotvec=ln(prplotvec)
-        global data=DataFrame(input=xinput,area=xareavec,area2=xareavec2,mninput=mninput,mnareaf=mnareaf,mnareap=mnareap,plotB=plotB,plottarea=plottarea,owner=owner,prplotv=xprplotvec,distance=distance,mndist=mndist,plotherf=plotherf,mnherf=mnherf,mnn=mnn)
-        mnarea=sum(Matrix(data[:,["area", "mnareap","input","prplotv"]]))/nplots
+        xtarea=ln(plottarea)
+
+        xprplotvec=ln(prplotvec)-xareavec
+        global data=DataFrame(input=xinput,area=xareavec,tarea=xtarea,avdist=avdistp,mnavdist=mnavdist,area2=xareavec2,mninput=mninput,mnareaf=mnareaf,mnareap=mnareap,plotB=plotB,plottarea=plottarea,owner=owner,prplotv=xprplotvec,distance=distance,mndist=mndist,plotherf=plotherf,mnherf=mnherf,mnn=mnn)
+        mnarea=sum(Matrix(data[:,["area", "mnareap","input","prplotv"]]),dims=1)/nplots
         areacov=cov(Matrix(data[:,["area", "mnareap","input","prplotv"]]))
+        #global meansdata=[xinput,prplotv,area,area2,mnn,distance,mnareaf,lnmnsa,mnsher,mndist,mnavdist]
         bhat1=0
         bhat1a=0
         bhat4=0
@@ -577,16 +588,19 @@ function run(delta,spill,maonly)
         #bhat0=fit(EconometricModel, @formula(input~area+area2+distance+mnn+mnareap+mnareaf+mndist+mnherf+absorb(owner)),data)
         #bhat1=fit(EconometricModel, @formula(mninput~mnareaf+mnareap+area+area2+mnn+distance+mndist+mnherf+absorb(owner)),data)
         #bhat1a=fit(EconometricModel, @formula(mninput~mnareaf+mnareap+area+area2+mnn+plottarea +distance+mndist+plotherf+mnherf ),data)
-        bhat2=fit(EconometricModel, @formula(input ~ area+area2 +distance+mnn+ absorb(owner)+ (mninput~mnareaf+mnareap+mndist + mnherf)),data)
-        bhat3=fit(EconometricModel, @formula(prplotv ~ area +area2+ distance+mnn+ absorb(owner)+ (mninput~mnareaf+mnareap+mndist + mnherf)),data)
-        #bhat4=fit(EconometricModel, @formula(input ~ area +area2+plottarea+ distance +mnn+plotherf+(mninput~mnareaf+mnareap+mndist+mnherf)),data)
-        #bhat5=fit(EconometricModel, @formula(prplotv ~ area+area2 +plottarea+distance+mnn+plotherf+ (mninput~mnareaf+mnareap+mndist+mnherf)),data)
+        #bhat2=fit(EconometricModel, @formula(input ~ area+area2 +distance+mnn+ absorb(owner)+ (mninput~mnareaf+mnareap+mndist + mnherf)),data)
+        #bhat3=fit(EconometricModel, @formula(prplotv ~ area +area2+ distance+mnn+ absorb(owner)+ (mninput~mnareaf+mnareap+mndist + mnherf)),data)
+        bhat2=fit(EconometricModel, @formula(input ~ (mninput~mnareaf+mnareap+mndist+mnavdist+mnherf)+area+ distance  +mnn+absorb(owner)),data)
+        bhat3=fit(EconometricModel, @formula(prplotv ~ (mninput~mnareaf+mnareap+mndist+mnavdist+mnherf)+area+distance+ mnn+absorb(owner)),data)
+        
+        bhat4=fit(EconometricModel, @formula(input ~ (mninput~mnareaf+mnareap+mndist+mnavdist+mnherf)+area +tarea+plotherf+ distance +avdist +mnn),data)
+        bhat5=fit(EconometricModel, @formula(prplotv ~ (mninput~mnareaf+mnareap+mndist+mnavdist+mnherf)+area+tarea +plotherf+distance+avdist+ mnn),data)
         #print(bhat0a)
         #print(bhat0)
         #println(bhat1)
         #println(bhat1a)
-        #println(bhat2)
-        #println(bhat3)
+        println(bhat2)
+        println(bhat3)
         #println(bhat4)
         #println(bhat5)
         
@@ -621,6 +635,8 @@ function run(delta,spill,maonly)
     min=1
     max=trunc(2*sqrt(nfarmers))
     max=convert(Int64,max)
+    delta=deltagrid
+    spill=spillgrid
     #max=6
     #println(max)
     dgrid=.01 #.1 #distance between grid points4
@@ -678,6 +694,7 @@ function run(delta,spill,maonly)
     #println("sum grid ",sum(inplot,dims=2))
     #println("inp",inplot)
     #println("inf",infarmer)
+   
     @time inputsmasv,profitsmasv,utilmasv=indmaxso1(inputs,0)
     #time inputsmasv,profitsmasv=indmaxma(inputs)
     bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,mnarea,areacov=0,0,0,0,0,0,0,0
@@ -703,15 +720,16 @@ function run(delta,spill,maonly)
         global zco=heat(inputscosv)
     end
 
-    function fitdata()
+    function fitdata(parm)
 
         x1=    XLSX.readxlsx("simom2.xlsx")
         println(x1)
         xs1=x1["Sheet1"]
-        global inputcoefs=xs1["A1:A8"][[2 3 7],1]
-        global yieldcoefs=xs1["A15:A22"][[2 3 7],1]
-        parm=[75., -.5]
-        results=Optim.optimize(sse,parm,g_tol=.001)
+        global inputcoefs=xs1["A1:A8"][[ 1 2 ],1]
+        global yieldcoefs=xs1["A15:A22"][[1 2],1]
+        global means=xs1["A30:A41"][[3 8 2 1],1]
+        
+        results=Optim.optimize(sse,parm,g_tol=.0001)
     end
     function sse(parm)
         delta=parm[1]
@@ -720,20 +738,28 @@ function run(delta,spill,maonly)
         @time inputsmasv,profitsmasv,utilmasv=indmaxso1(inputs,0)
         bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,mnarea,areacov=0,0,0,0,0,0,0,0
         bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,mnarea,areacov=mnneighbors(inputsmasv[1:nplots],profitsmasv)
-        vecsim1=bhat2.β[[2 3 6]] 
-        vecsim2=bhat3.β[[2 3 6]]
+        vecsim1=bhat2.β[[5 2]] 
+        vecsim2=bhat3.β[[5 2]]
         vecsim=vcat(vecsim1',vecsim2')
         vecdat=vcat(inputcoefs',yieldcoefs')
         dvec=vecsim-vecdat
-        sse=(dvec'*dvec)[1,1]
+        omega=[[10 0 0 0 ],[0 1 0 0],[0 0 1 0],[0 0 0 1]]
+        sse=(dvec'*omega*dvec)[1,1]
         println("sse momenges ",sse," delta ", delta,"spill",spill)
         println([vecsim vecdat])
+        println([mnarea])
+        println([means])
+        
         return sse
     end
-    fitdata()
+    fitresults=0
+    if maonly==true
+    parm=[deltagrid,spillgrid]
+    fitresults=fitdata(parm)
+    end
 
 
-    return(inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv[1:nplots],inputssosv[1:nplots],inputscosv[1:nplots],profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv)
+    return(fitresults,inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv[1:nplots],inputssosv[1:nplots],inputscosv[1:nplots],profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv)
 end   
 #=
 results=zeros(5,5,7)
@@ -759,10 +785,14 @@ end
 
 
 
+parmout=[.75,-.5]
+fit1,inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv,inputssosv,inputscosv,profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv=run(parmout[1],parmout[2],true)
+println("fit ",fit1)
+parmout=Optim.minimizer(fit1)
+#parmout=[.75,-.5]
+inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv,inputssosv,inputscosv,profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv=run(parmout[1],parmout[2],false)
+JLD2.@save "variables.jld2" inplot infarmer Pmat2 plotfarmer idplot bhat1 bhat1a bhat2 bhat3 bhat4 bhat5 inputsmasv inputssosv inputscosv profitsmasv profitssosv profitscosv utilmasv utilsosv utilcosv
 
-inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv,inputssosv,inputscosv,profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv=run(.75,-.5,true)
-
-#=
 
 scatter(areasv,inputssosv,xlabel="Plot Area",ylabel="Input/Area",label="Cooperative",legend_position=:topleft)
 scatter!(areasv,inputscosv,label="Social Planner")
@@ -785,4 +815,3 @@ savefig(zco,"Egalheat.png")
 savefig(pinput,"Inputs.png")
 savefig(poutput,"Outputs.png")
 savefig(pnet,"Profits.png")
-=#
