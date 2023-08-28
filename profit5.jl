@@ -630,6 +630,40 @@ function run(deltagrid,spillgrid,maonly)
         plot!(tesssv)
     end
 
+    function tables()
+    results=zeros(5,5,7)
+        table1=zeros(15,5)
+        table2=zeros(10,5)
+        table3=zeros(10,5)
+        global i1=0
+        for delta=.25:.25:1.25
+            global i1=i1+1
+            global j1=0
+            for spill=-.5:.25:.5 
+                global j1=j1+1
+                fit,inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv,inputssosv,inputscosv,profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv=run(delta,spill,false)
+                global output=DataFrame(ima=inputsmasv,iso=inputssosv,ico=inputscosv,pma=vec(profitsmasv),pso=vec(profitssosv),pco=vec(profitscosv))
+                c1=coef(bhat2)
+                c2=coef(bhat3)
+                results[i1,j1,:]=[sum(utilmasv),sum(utilsosv),sum(utilcosv),c1[2],c1[5],c2[2],c2[5]]
+                table1[i1,j1]=sum(utilmasv)
+                table1[i1+1,j1]=sum(utilsosv)
+                table1[i1+2,j1]=sum(utilcosv)
+                table2[i1,j1]=c1[2]
+                table2[i1+1,j1]=c1[5]
+                table3[i1,j1]=c2[2]
+                table3[i1+1,j1]=c2[5]
+                
+
+                println(sum(utilmasv))
+                println(sum(utilsosv))
+                println(sum(utilcosv))
+            end
+        end
+        JLD2.@save "results.jld2" table1 table2 table3 
+    end
+
+
 
     nfarmers=50#number farmers
     min=1
@@ -743,7 +777,7 @@ function run(deltagrid,spillgrid,maonly)
         vecsim=vcat(vecsim1',vecsim2')
         vecdat=vcat(inputcoefs',yieldcoefs')
         dvec=vecsim-vecdat
-        omega=[[10 0 0 0 ],[0 1 0 0],[0 0 1 0],[0 0 0 1]]
+        omega=[0 0 0 0 ;0 1 0 0;0 0 1 0;0 0 0 1]
         sse=(dvec'*omega*dvec)[1,1]
         println("sse momenges ",sse," delta ", delta,"spill",spill)
         println([vecsim vecdat])
@@ -757,30 +791,12 @@ function run(deltagrid,spillgrid,maonly)
     parm=[deltagrid,spillgrid]
     fitresults=fitdata(parm)
     end
-
+    tables()
 
     return(fitresults,inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv[1:nplots],inputssosv[1:nplots],inputscosv[1:nplots],profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv)
 end   
-#=
-results=zeros(5,5,7)
-global i1=0
-for delta=.25:.25:1.25
-    global i1=i1+1
-    global j1=0
-    for spill=-.5:.25:.5 
-        global j1=j1+1
-        inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv,inputssosv,inputscosv,profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv=run(delta,spill,false)
-        global output=DataFrame(ima=inputsmasv,iso=inputssosv,ico=inputscosv,pma=vec(profitsmasv),pso=vec(profitssosv),pco=vec(profitscosv))
-        c1=coef(bhat2)
-        c2=coef(bhat3)
-        results[i1,j1,:]=[sum(utilmasv),sum(utilsosv),sum(utilcosv),c1[2],c1[5],c2[2],c2[5]]
 
-        println(sum(utilmasv))
-        println(sum(utilsosv))
-        println(sum(utilcosv))
-    end
-end
-=#
+
 
 
 
@@ -790,8 +806,8 @@ fit1,inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat
 println("fit ",fit1)
 parmout=Optim.minimizer(fit1)
 #parmout=[.75,-.5]
-inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv,inputssosv,inputscosv,profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv=run(parmout[1],parmout[2],false)
-JLD2.@save "variables.jld2" inplot infarmer Pmat2 plotfarmer idplot bhat1 bhat1a bhat2 bhat3 bhat4 bhat5 inputsmasv inputssosv inputscosv profitsmasv profitssosv profitscosv utilmasv utilsosv utilcosv
+fit1,inplot,infarmer,Pmat2,plotfarmer,idplot,bhat1,bhat1a,bhat2,bhat3,bhat4,bhat5,inputsmasv,inputssosv,inputscosv,profitsmasv,profitssosv,profitscosv,utilmasv,utilsosv,utilcosv=run(parmout[1],parmout[2],false)
+JLD2.@save "variables.jld2" fit1 inplot infarmer Pmat2 plotfarmer idplot bhat1 bhat1a bhat2 bhat3 bhat4 bhat5 inputsmasv inputssosv inputscosv profitsmasv profitssosv profitscosv utilmasv utilsosv utilcosv
 
 
 scatter(areasv,inputssosv,xlabel="Plot Area",ylabel="Input/Area",label="Cooperative",legend_position=:topleft)
